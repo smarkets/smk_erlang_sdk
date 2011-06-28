@@ -50,6 +50,4 @@ In the following example the server A sends message #8 but the client B expects 
                |                                        | 
  expects in #5 | <--------------- {seq=5, payload=pong} | 
 
-This means that both the server and client need to keep a log of all outgoing messages in sequence numbered order. If this is not done then the session will become useless and eventually get disconnected and a new connection and session will need to be made.
-
-
+This means that both the server and client need to keep a log of all outgoing messages in sequence numbered order. If this is not done then the session will become useless and eventually get disconnected and a new connection and session will need to be made. In smk_example_client the gen_server smk_example_message_cache is used to maintain a 20 message cache, which might be adequate for lower throughput clients but for clients that want to deal with large numbers of orders a better approach that caches to disk and can be recovered from incase of crashes should be consider.
