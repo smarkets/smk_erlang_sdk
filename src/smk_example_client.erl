@@ -29,7 +29,7 @@
 -export([start_link/1]).
 
 %% send payloads
--export([ping/1, order/6]).
+-export([ping/1, order/6, cancel/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -50,6 +50,10 @@ ping(Pid) ->
 order(Pid, Qty, Px, Side, Cg, C) ->
   PayloadRec = #seto_order_payload{req=ossp_uuid:make(v4,text), quantity=Qty, price=Px, side=Side, group=Cg, contract=C},
   gen_server:call(Pid, {order, PayloadRec}).
+
+cancel(Pid, Order) ->
+  PayloadRec = #seto_order_cancel_payload{order=Order},
+  gen_server:call(Pid, {order_cancel, PayloadRec}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
