@@ -1,4 +1,4 @@
-As mentioned in the README the message payloads passed between a clients and Smarkets are each assigned an incrementing sequence number as to maintain an ordered sequence of events known to both parties. If either side of the communication crashes at any point after receiving a message it can recover by sending a replay payload to the other party with the sequence number of the last message that it has definitely received and handled appropriately.
+As mentioned in the README the message payloads passed between clients and Smarkets are each assigned an incrementing sequence number as to maintain an ordered sequence of events known to both parties. If either side of the communication crashes at any point after receiving a message it can recover by sending a replay payload to the other party with the sequence number of the last message that it has definitely received and handled appropriately.
 
 The aim of using this manner of asyncronous message passing is to maintain high throughput while also guaranteeing delivery and message handling on both ends of the communication channel. 
 
@@ -36,7 +36,7 @@ If your Erlang application exits for any reason and you lose connection with Sma
 
 If a message is not correctly handled by either side of the connection a sequence number inconsistency may occur. This is when one side expects an incoming message with a specific sequence number but receives one that is larger. When this is detected a replay payload needs to be sent and handled by the other party by resending each of the missing messages along with the extra value replay=true to the #seto_message record.
 
-In the following example the server A expects the next incoming message to be sequence number 5, but the client B sends it number 8:
+In the following example the server A sends message #8 but the client B expects message #5, possibly because it had crashed before fully processing the TCP Packets that it was sent:
 
              A | {seq=8, payload=ping} ---------------> | B
                |                                        | expects in #5

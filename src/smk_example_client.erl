@@ -15,7 +15,8 @@
 -record(s, {
     sock,
     out :: pos_integer(),
-    in :: pos_integer()
+    in :: pos_integer(),
+    session :: undefined | binary()
   }).
 
 -include("seto_piqi.hrl").
@@ -75,8 +76,9 @@ init(Opts) ->
       {stop, Reason}
   end.
 
-handle_call(Payload, _From, State) ->
-  send_call(Payload, State).
+handle_call(Payload, _From, State0) ->
+  {Reply, State} = send_call(Payload, State0),
+  {reply, Reply, State}.
 
 handle_cast(_Msg, State) ->
   {noreply, State}.
@@ -108,17 +110,39 @@ code_change(_OldVsn, State, _Extra) ->
 handle_message(Data, State) when is_binary(Data) ->
   handle_message(seto_piqi:parse_message(Data), State);
 
-handle_message(#seto_message{seq=Seq} = Msg, #s{in=Seq} = State) ->
-  io:format("Received ~p~n", [Msg]),
-  {noreply, State#s{in=Seq+1}}.
+handle_message(#seto_message{seq=Seq}, #s{in=InSeq} = State0) when Seq > InSeq ->
+  {_, State} = send_call({replay, #seto_replay_payload{seq=InSeq}}, State0),
+  {noreply, State};
 
-send_call(Payload, #s{out=Seq, sock=Sock} = State) ->
-  case sock_send(Sock, #seto_message{seq=Seq, payload=Payload}) of
+handle_message(#seto_message{seq=Seq, payload=Payload} = Msg, #s{in=Seq} = State) ->
+  io:format("Received ~p~n", [Msg]),
+  {noreply, handle_payload(Payload, State#s{in=Seq+1})}.
+
+handle_payload({replay, #seto_replay_payload{seq=Seq}}, #s{session=Sess, sock=Sock} = State) ->
+  smk_example_message_cache:map_from(Sess, Seq,
+    fun(Msg) ->
+      sock_send(Sock, replay_msg(Msg))
+    end),
+  State;
+
+handle_payload({login_response, #seto_login_response_payload{session=Sess}}, State) ->
+  State#s{session=Sess};
+
+handle_payload(_, State) ->
+  State.
+
+send_call(Payload, #s{session=Sess, out=Seq, sock=Sock} = State) ->
+  Msg = #seto_message{seq=Seq, payload=Payload},
+  case sock_send(Sock, Msg) of
     ok ->
-      {reply, ok, State#s{out=Seq+1}};
+      smk_example_message_cache:log(Sess, Msg),
+      {ok, State#s{out=Seq+1}};
     Error ->
-      {reply, Error, State}
+      {Error, State}
   end.
 
-sock_send(Sock, #seto_message{} = Msg) ->
+sock_send(Sock, Msg) ->
   gen_tcp:send(Sock, seto_piqi:gen_message(Msg)).
+
+replay_msg(Msg) ->
+  Msg#seto_message{replay=true}.
