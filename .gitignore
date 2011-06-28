@@ -1,0 +1,4 @@
+ebin/
+deps/
+src/seto_piqi.erl
+include/seto_piqi.hrl

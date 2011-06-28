@@ -1,0 +1,11 @@
+{application, smk_erlang_sdk, [
+    {description, "Smarkets API Software Development Kit for Erlang"},
+    {vsn, "0"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        gproc
+      ]},
+    {env, []}
+  ]}.
