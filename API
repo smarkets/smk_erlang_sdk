@@ -1,0 +1,9 @@
+As mentioned in the README the message payloads passed between a clients and Smarkets are each assigned an incrementing sequence number as to maintain an ordered sequence of events known to both parties. If either side of the communication crashes at any point after receiving a message it can recover by sending a replay payload to the other party with the sequence number of the last message that it has definitely received and handled appropriately.
+
+The aim of using this manner of asyncronous message passing is to maintain high throughput while also guaranteeing delivery and message handling on both ends of the communication channel. 
+
+This is based on (but not an implementation of) the fundamentals of the Financial Information eXchange Protocol (FIX) used for real-time electronic exchange of securities transactions. http://www.fixprotocol.org/
+
+==
+
+
