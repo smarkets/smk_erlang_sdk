@@ -89,9 +89,8 @@ handle_cast(_Msg, State) ->
 
 handle_info({tcp, Sock, Data}, #s{buf=Buf} = State) ->
   inet:setopts(Sock, [{active,once}]),
-  % todo: framing
   case seto_frame:deframe(Data, Buf) of
-    {0, MsgData, NewBuf} ->
+    {eto, MsgData, NewBuf} ->
       handle_message(MsgData, State#s{buf=NewBuf});
     NewBuf ->
       {noreply, State#s{buf=NewBuf}}
@@ -155,7 +154,7 @@ send_call(Payload, #s{session=Sess, out=Seq, sock=Sock} = State) ->
   end.
 
 sock_send(Sock, Msg) ->
-  gen_tcp:send(Sock, seto_frame:frame(seto_piqi:gen_message(Msg))).
+  gen_tcp:send(Sock, seto_frame:frame(eto, seto_piqi:gen_message(Msg))).
 
 replay_msg(Msg) ->
   Msg#seto_message{replay=true}.
