@@ -14,6 +14,7 @@
 
 -record(s, {
     sock,
+    buf = <<>>,
     out :: pos_integer(),
     in :: pos_integer(),
     session :: undefined | binary()
@@ -64,14 +65,17 @@ init(Opts) ->
   Host = proplists:get_value(host, Opts),
   Port = proplists:get_value(port, Opts),
   {ok, Sock} = gen_tcp:connect(Host, Port, ?SOCK_OPTS),
+  Out = proplists:get_value(out, Opts, 1),
+  In = proplists:get_value(in, Opts, 1),
   LoginPayload = 
     {login, #seto_login_payload{
         username=proplists:get_value(username, Opts),
-        password=proplists:get_value(password, Opts)
+        password=proplists:get_value(password, Opts),
+        session=proplists:get_value(session, Opts)
       }},
-  case sock_send(Sock, #seto_message{seq=1, payload=LoginPayload}) of
+  case sock_send(Sock, #seto_message{seq=Out, payload=LoginPayload}) of
     ok ->
-      {ok, #s{sock=Sock, in=1, out=2}};
+      {ok, #s{sock=Sock, in=In, out=Out+1}};
     {error, Reason} ->
       {stop, Reason}
   end.
@@ -83,10 +87,15 @@ handle_call(Payload, _From, State0) ->
 handle_cast(_Msg, State) ->
   {noreply, State}.
 
-handle_info({tcp, Sock, Data}, State) ->
+handle_info({tcp, Sock, Data}, #s{buf=Buf} = State) ->
   inet:setopts(Sock, [{active,once}]),
   % todo: framing
-  handle_message(Data, State);
+  case seto_frame:deframe(Data, Buf) of
+    {0, MsgData, NewBuf} ->
+      handle_message(MsgData, State#s{buf=NewBuf});
+    NewBuf ->
+      {noreply, State#s{buf=NewBuf}}
+  end;
 
 handle_info({tcp_closed, _Sock}, State) ->
   {stop, normal, State};
@@ -114,8 +123,7 @@ handle_message(#seto_message{seq=Seq}, #s{in=InSeq} = State0) when Seq > InSeq -
   {_, State} = send_call({replay, #seto_replay_payload{seq=InSeq}}, State0),
   {noreply, State};
 
-handle_message(#seto_message{seq=Seq, payload=Payload} = Msg, #s{in=Seq} = State) ->
-  io:format("Received ~p~n", [Msg]),
+handle_message(#seto_message{seq=Seq, payload=Payload} = _Msg, #s{in=Seq} = State) ->
   {noreply, handle_payload(Payload, State#s{in=Seq+1})}.
 
 handle_payload({replay, #seto_replay_payload{seq=Seq}}, #s{session=Sess, sock=Sock} = State) ->
@@ -126,7 +134,12 @@ handle_payload({replay, #seto_replay_payload{seq=Seq}}, #s{session=Sess, sock=So
   State;
 
 handle_payload({login_response, #seto_login_response_payload{session=Sess}}, State) ->
+  io:format("Logged in as ~p~n", [Sess]),
   State#s{session=Sess};
+
+handle_payload(pong, State) ->
+  io:format(" p", []),
+  State;
 
 handle_payload(_, State) ->
   State.
@@ -142,7 +155,8 @@ send_call(Payload, #s{session=Sess, out=Seq, sock=Sock} = State) ->
   end.
 
 sock_send(Sock, Msg) ->
-  gen_tcp:send(Sock, seto_piqi:gen_message(Msg)).
+  gen_tcp:send(Sock, seto_frame:frame(seto_piqi:gen_message(Msg))).
 
 replay_msg(Msg) ->
   Msg#seto_message{replay=true}.
+

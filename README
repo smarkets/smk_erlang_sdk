@@ -20,7 +20,7 @@ An example client is available in src/smk_example_client.erl - to start it up si
     erl -pa ebin/ deps/*/ebin
     1> smk_example_sup:start_link().
     {ok, <0.34.0>}
-    1> {ok, C} = smk_example_clients_sup:start_child([{host,"10.100.1.188"},{port,3701},{username,<<"name@email.com">>},{password,<<"password">>}]).
+    1> {ok, C} = smk_example_clients_sup:start_client([{host,"10.100.1.188"},{port,3701},{username,<<"name@email.com">>},{password,<<"password">>}]).
     {ok, <0.38.0>}
     Received {seto_message,1,
                  {login_response,
