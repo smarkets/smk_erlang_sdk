@@ -92,6 +92,8 @@ handle_info({tcp, Sock, Data}, #s{buf=Buf} = State) ->
   case seto_frame:deframe(Data, Buf) of
     {eto, MsgData, NewBuf} ->
       handle_message(MsgData, State#s{buf=NewBuf});
+    {impl, MsgData, NewBuf} ->
+      handle_pp(MsgData, State#s{buf=NewBuf});
     NewBuf ->
       {noreply, State#s{buf=NewBuf}}
   end;
@@ -114,6 +116,12 @@ code_change(_OldVsn, State, _Extra) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+handle_pp(Data, State) when is_binary(Data) ->
+  handle_pp(seto_piqi:parse_pp(Data), State);
+handle_pp(#seto_pp{contract=Contract, price=Price, quantity=Qty} = _PP, State) ->
+  io:format(" ~p ~p ~p \r", [Contract, Price, Qty]),
+  {noreply, State}.
 
 handle_message(Data, State) when is_binary(Data) ->
   handle_message(seto_piqi:parse_message(Data), State);
