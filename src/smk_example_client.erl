@@ -50,7 +50,7 @@ ping(Pid) ->
   gen_server:call(Pid, ping).
 
 order(Pid, Qty, Px, Side, Cg, C) ->
-  PayloadRec = #seto_order_payload{req=ossp_uuid:make(v4,text), quantity=Qty, price=Px, side=Side, group=Cg, contract=C},
+  PayloadRec = #seto_order_payload{quantity=Qty, price=Px, side=Side, group=Cg, contract=C},
   gen_server:call(Pid, {order, PayloadRec}).
 
 cancel(Pid, Order) ->
