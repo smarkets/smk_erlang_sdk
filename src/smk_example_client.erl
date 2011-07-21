@@ -5,7 +5,7 @@
 -define(SOCK_OPTS, [
     binary,
     {active, once},
-    {packet, 4},
+    {packet, 0},
     {recbuf, 8192},
     {send_timeout, 5000},
     {send_timeout_close, true},
@@ -31,7 +31,7 @@
 -export([start_link/1]).
 
 %% send payloads
--export([ping/1, order/6, cancel/2]).
+-export([ping/1, order/6, order_cancel/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -53,7 +53,7 @@ order(Pid, Qty, Px, Side, Cg, C) ->
   PayloadRec = #seto_order_payload{quantity=Qty, price=Px, side=Side, group=Cg, contract=C},
   gen_server:call(Pid, {order, PayloadRec}).
 
-cancel(Pid, Order) ->
+order_cancel(Pid, Order) ->
   PayloadRec = #seto_order_cancel_payload{order=Order},
   gen_server:call(Pid, {order_cancel, PayloadRec}).
 
@@ -126,7 +126,8 @@ handle_pp(#seto_pp{contract=Contract, price=Price, quantity=Qty} = _PP, State) -
 handle_message(Data, State) when is_binary(Data) ->
   handle_message(seto_piqi:parse_message(Data), State);
 
-handle_message(#seto_message{seq=Seq}, #s{in=InSeq} = State0) when Seq > InSeq ->
+handle_message(#seto_message{seq=Seq} = _Msg, #s{in=InSeq} = State0) when Seq > InSeq ->
+  io:format("Replay from ~p to ~p~n", [InSeq, Seq]),
   {_, State} = send_call({replay, #seto_replay_payload{seq=InSeq}}, State0),
   {noreply, State};
 
@@ -148,7 +149,8 @@ handle_payload(pong, State) ->
   io:format(" p", []),
   State;
 
-handle_payload(_, State) ->
+handle_payload(Payload, State) ->
+  io:format("Received ~p~n", [Payload]),
   State.
 
 send_call(Payload, #s{session=Sess, out=Seq, sock=Sock} = State) ->

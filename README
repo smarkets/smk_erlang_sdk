@@ -35,7 +35,7 @@ An example client is available in src/smk_example_client.erl - to start it up si
                          <<"b343e1d8-1427-46fa-b1e0-06542b5ab2da">>,
                          <<"000000000000010980d9111efe41fff0">>}},
                  false}  
-    3>  smk_example_client:cancel(C, <<"000000000000010980d9111efe41fff0">>).
+    3>  smk_example_client:order_cancel(C, <<"000000000000010980d9111efe41fff0">>).
     ok
     Received {seto_message,3,
                  {order_cancelled,
