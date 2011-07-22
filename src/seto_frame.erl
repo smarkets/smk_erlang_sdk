@@ -6,12 +6,12 @@ deframe(Bin) -> deframe(Bin, []).
 deframe(<<Type:1, Bytes:15/integer, Rest/binary>> = All, Acc) ->
   case Rest of
     <<MsgData:Bytes/binary-unit:8, Buf/binary>> ->
-      deframe(Buf, {type_to_atom(Type), MsgData});
+      deframe(Buf, [{type_to_atom(Type), MsgData}|Acc]);
     _ ->
-      {All, Acc}
+      {All, lists:reverse(Acc)}
   end;
 deframe(All, Acc) ->
-  {All, Acc}.
+  {All, lists:reverse(Acc)}.
 
 frame(Type, IOList) ->
   Bin = iolist_to_binary(IOList),

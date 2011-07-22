@@ -51,7 +51,7 @@ ping(Pid) ->
 
 order(Pid, Qty, Px, Side, Cg, C) ->
   PayloadRec = #seto_order_create{quantity=Qty, price=Px, side=Side, group=Cg, contract=C},
-  gen_server:call(Pid, {order, PayloadRec}).
+  gen_server:call(Pid, {order_create, PayloadRec}).
 
 order_cancel(Pid, Order) ->
   PayloadRec = #seto_order_cancel{order=Order},
