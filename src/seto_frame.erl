@@ -1,19 +1,17 @@
 -module(seto_frame).
 
--export([deframe/2, frame/2]).
+-export([deframe/1, frame/2]).
 
-deframe(<<Type:1, Bytes:15/integer, Rest/binary>> = All) ->
+deframe(Bin) -> deframe(Bin, []).
+deframe(<<Type:1, Bytes:15/integer, Rest/binary>> = All, Acc) ->
   case Rest of
     <<MsgData:Bytes/binary-unit:8, Buf/binary>> ->
-      {type_to_atom(Type), MsgData, Buf};
+      deframe(Buf, {type_to_atom(Type), MsgData});
     _ ->
-      All
+      {All, Acc}
   end;
-deframe(Data) ->
-  Data.
-
-deframe(Data, Buf) ->
-  deframe(<<Buf/binary, Data/binary>>).
+deframe(All, Acc) ->
+  {All, Acc}.
 
 frame(Type, IOList) ->
   Bin = iolist_to_binary(IOList),
