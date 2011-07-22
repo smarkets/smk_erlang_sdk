@@ -28,10 +28,11 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/1]).
+-export([start_link/1, stop/1]).
 
 %% send payloads
 -export([ping/1, order/6, order_cancel/2]).
+-export([subscribe/2, unsubscribe/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -45,6 +46,8 @@
 
 start_link(Opts) ->
   gen_server:start_link(?MODULE, Opts, []).
+stop(Pid) ->
+  gen_server:cast(Pid, stop).
 
 ping(Pid) ->
   gen_server:call(Pid, ping).
@@ -56,6 +59,14 @@ order(Pid, Qty, Px, Side, Cg, C) ->
 order_cancel(Pid, Order) ->
   PayloadRec = #seto_order_cancel{order=Order},
   gen_server:call(Pid, {order_cancel, PayloadRec}).
+
+subscribe(Pid, Group) ->
+  PayloadRec = #seto_market_subscription{group=Group},
+  gen_server:call(Pid, {market_subscription, PayloadRec}).
+
+unsubscribe(Pid, Group) ->
+  PayloadRec = #seto_market_unsubscription{group=Group},
+  gen_server:call(Pid, {market_unsubscription, PayloadRec}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -84,6 +95,9 @@ handle_call(Payload, _From, State0) ->
   {Reply, State} = send_call(Payload, State0),
   {reply, Reply, State}.
 
+handle_cast(stop, State) ->
+  {stop, normal, State};
+
 handle_cast(_Msg, State) ->
   {noreply, State}.
 
@@ -110,7 +124,8 @@ handle_info({tcp_error, _Sock, Reason}, State) ->
 handle_info(_Info, State) ->
   {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #s{session=Sess, in=In, out=Out}) ->
+  io:format("Terminated - to resume add opts {session,~p},{in,~p},{out,~p}~n", [Sess,In,Out]),
   ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -121,7 +136,13 @@ code_change(_OldVsn, State, _Extra) ->
 %% ------------------------------------------------------------------
 
 handle_push_price(Data, State) when is_binary(Data) ->
-  handle_push_price(seto_piqi:parse_push_price(Data), State);
+  handle_push_price(seto_piqi:parse_transient(Data), State);
+handle_push_price({_, #seto_push_accepted{} = Push}, State) ->
+  io:format("Push ~p~n", [Push]),
+  State;
+handle_push_price({_, #seto_push_executed{} = Push}, State) ->
+  io:format("Push ~p~n", [Push]),
+  State;
 handle_push_price(#seto_push_price{contract=Contract, price=Price, quantity=Qty} = _PP, State) ->
   io:format(" ~p ~p ~p \r", [Contract, Price, Qty]),
   State.
