@@ -28,7 +28,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/1, stop/1]).
+-export([start_link/1, stop/1, seq/1]).
 
 %% send payloads
 -export([ping/1, order/6, order_cancel/2]).
@@ -48,6 +48,9 @@ start_link(Opts) ->
   gen_server:start_link(?MODULE, Opts, []).
 stop(Pid) ->
   gen_server:cast(Pid, stop).
+
+seq(Pid) ->
+  gen_server:call(Pid, seq).
 
 ping(Pid) ->
   gen_server:call(Pid, ping).
@@ -91,6 +94,9 @@ init(Opts) ->
       {stop, Reason}
   end.
 
+handle_call(seq, _From, #s{in=In, out=Out} = State) ->
+  {reply, {In,Out}, State};
+
 handle_call(Payload, _From, State0) ->
   {Reply, State} = send_call(Payload, State0),
   {reply, Reply, State}.
@@ -116,6 +122,7 @@ handle_info({tcp, Sock, Data}, #s{buf=Buf} = State) ->
   {noreply, NewState#s{buf=NewBuf}};
 
 handle_info({tcp_closed, _Sock}, State) ->
+  io:format("TCP Socket Closed~n", []),
   {stop, normal, State};
 
 handle_info({tcp_error, _Sock, Reason}, State) ->
@@ -124,8 +131,8 @@ handle_info({tcp_error, _Sock, Reason}, State) ->
 handle_info(_Info, State) ->
   {noreply, State}.
 
-terminate(_Reason, #s{session=Sess, in=In, out=Out}) ->
-  io:format("Terminated - to resume add opts {session,~p},{in,~p},{out,~p}~n", [Sess,In,Out]),
+terminate(Reason, #s{session=Sess, in=In, out=Out}) ->
+  io:format("Terminated (~p) - to resume add opts {session,~p},{in,~p},{out,~p}~n", [Reason,Sess,In,Out]),
   ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -150,9 +157,9 @@ handle_push_price(#seto_push_price{contract=Contract, price=Price, quantity=Qty}
 handle_message(Data, State) when is_binary(Data) ->
   handle_message(seto_piqi:parse_message(Data), State);
 
-handle_message(#seto_message{seq=Seq} = _Msg, #s{in=InSeq} = State0) when Seq > InSeq ->
+handle_message(#seto_message{seq=Seq, payload=Payload}, #s{in=InSeq} = State0) when Seq > InSeq ->
   io:format("Replay from ~p to ~p~n", [InSeq, Seq]),
-  {_, State} = send_call({replay, #seto_replay{seq=InSeq}}, State0),
+  {_, State} = send_call({replay, #seto_replay{seq=InSeq}}, login_payload(Payload,State0)),
   State;
 
 handle_message(#seto_message{seq=Seq, payload=Payload} = _Msg, #s{in=Seq} = State) ->
@@ -161,13 +168,13 @@ handle_message(#seto_message{seq=Seq, payload=Payload} = _Msg, #s{in=Seq} = Stat
 handle_payload({replay, #seto_replay{seq=Seq}}, #s{session=Sess, sock=Sock} = State) ->
   smk_example_message_cache:map_from(Sess, Seq,
     fun(Msg) ->
+      io:format("Resending ~p~n", [replay_msg(Msg)]),
       sock_send(Sock, replay_msg(Msg))
     end),
   State;
 
-handle_payload({login_response, #seto_login_response{session=Sess}}, State) ->
-  io:format("Logged in as ~p~n", [Sess]),
-  State#s{session=Sess};
+handle_payload({login_response, _} = Payload, State) ->
+  login_payload(Payload, State);
 
 handle_payload(pong, State) ->
   io:format(" p", []),
@@ -175,6 +182,12 @@ handle_payload(pong, State) ->
 
 handle_payload(Payload, State) ->
   io:format("Received ~p~n", [Payload]),
+  State.
+
+login_payload({login_response, #seto_login_response{session=Sess, reset=Reset}}, State) ->
+  io:format("Logged in session ~p out ~p~n", [Sess, Reset]),
+  State#s{session=Sess, out=Reset};
+login_payload(_, State) ->
   State.
 
 send_call(Payload, #s{session=Sess, out=Seq, sock=Sock} = State) ->
@@ -190,6 +203,13 @@ send_call(Payload, #s{session=Sess, out=Seq, sock=Sock} = State) ->
 sock_send(Sock, Msg) ->
   gen_tcp:send(Sock, seto_frame:frame(eto, seto_piqi:gen_message(Msg))).
 
+replay_msg(#seto_message{payload={replay,_}, seq=Seq}) ->
+  gapfill(Seq);
+replay_msg(#seto_message{payload={login,_}, seq=Seq}) ->
+  gapfill(Seq);
 replay_msg(Msg) ->
   Msg#seto_message{replay=true}.
+
+gapfill(Seq) ->
+  #seto_message{payload=gapfill, replay=true, seq=Seq}.
 
