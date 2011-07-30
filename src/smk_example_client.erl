@@ -116,7 +116,7 @@ handle_info({tcp, Sock, Data}, #s{buf=Buf} = State) ->
         ({eto, MsgData}, AccState) ->
           handle_message(MsgData, AccState);
         ({impl, MsgData}, AccState) ->
-          handle_push_price(MsgData, AccState)
+          handle_transient(MsgData, AccState)
       end,
       State, Messages),
   {noreply, NewState#s{buf=NewBuf}};
@@ -142,16 +142,10 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-handle_push_price(Data, State) when is_binary(Data) ->
-  handle_push_price(seto_piqi:parse_transient(Data), State);
-handle_push_price({_, #seto_push_accepted{} = Push}, State) ->
-  io:format("Push ~p~n", [Push]),
-  State;
-handle_push_price({_, #seto_push_executed{} = Push}, State) ->
-  io:format("Push ~p~n", [Push]),
-  State;
-handle_push_price(#seto_push_price{contract=Contract, price=Price, quantity=Qty} = _PP, State) ->
-  io:format(" ~p ~p ~p \r", [Contract, Price, Qty]),
+handle_transient(Data, State) when is_binary(Data) ->
+  handle_transient(seto_piqi:parse_transient(Data), State);
+handle_transient(Transient, State) ->
+  io:format("Transient ~p~n", [Transient]),
   State.
 
 handle_message(Data, State) when is_binary(Data) ->
