@@ -92,7 +92,7 @@ do_map_from(Sess, FromSeq, Fun, Cache) ->
     none -> {error, empty_cache};
     {value, Q} ->
       lists:foldl(fun
-        (#seto_message{seq=Seq} = Msg, Seq) ->
+        (#seto_sequenced{seq=Seq} = Msg, Seq) ->
           Fun(Msg),
           Seq+1; 
         (_, NextSeq) ->

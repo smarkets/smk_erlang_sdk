@@ -30,7 +30,7 @@
 
 -export([start_link/1, stop/1, seq/1]).
 
-%% send payloads
+%% send message
 -export([ping/1, order/6, order_cancel/2]).
 -export([subscribe/2, unsubscribe/2]).
 
@@ -56,20 +56,20 @@ ping(Pid) ->
   gen_server:call(Pid, ping).
 
 order(Pid, Qty, Px, Side, Cg, C) ->
-  PayloadRec = #seto_order_create{quantity=Qty, price=Px, side=Side, group=Cg, contract=C},
-  gen_server:call(Pid, {order_create, PayloadRec}).
+  MessageRec = #seto_order_create{quantity=Qty, price=Px, side=Side, group=Cg, contract=C},
+  gen_server:call(Pid, {order_create, MessageRec}).
 
 order_cancel(Pid, Order) ->
-  PayloadRec = #seto_order_cancel{order=Order},
-  gen_server:call(Pid, {order_cancel, PayloadRec}).
+  MessageRec = #seto_order_cancel{order=Order},
+  gen_server:call(Pid, {order_cancel, MessageRec}).
 
 subscribe(Pid, Group) ->
-  PayloadRec = #seto_market_subscription{group=Group},
-  gen_server:call(Pid, {market_subscription, PayloadRec}).
+  MessageRec = #seto_market_subscription{group=Group},
+  gen_server:call(Pid, {market_subscription, MessageRec}).
 
 unsubscribe(Pid, Group) ->
-  PayloadRec = #seto_market_unsubscription{group=Group},
-  gen_server:call(Pid, {market_unsubscription, PayloadRec}).
+  MessageRec = #seto_market_unsubscription{group=Group},
+  gen_server:call(Pid, {market_unsubscription, MessageRec}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -81,13 +81,13 @@ init(Opts) ->
   {ok, Sock} = gen_tcp:connect(Host, Port, ?SOCK_OPTS),
   Out = proplists:get_value(out, Opts, 1),
   In = proplists:get_value(in, Opts, 1),
-  LoginPayload = 
+  LoginMessage = 
     {login, #seto_login{
         username=proplists:get_value(username, Opts),
         password=proplists:get_value(password, Opts),
         session=proplists:get_value(session, Opts)
       }},
-  case sock_send(Sock, #seto_message{seq=Out, payload=LoginPayload}) of
+  case sock_send(Sock, #seto_sequenced{seq=Out, message=LoginMessage}) of
     ok ->
       {ok, #s{sock=Sock, in=In, out=Out+1}};
     {error, Reason} ->
@@ -97,8 +97,8 @@ init(Opts) ->
 handle_call(seq, _From, #s{in=In, out=Out} = State) ->
   {reply, {In,Out}, State};
 
-handle_call(Payload, _From, State0) ->
-  {Reply, State} = send_call(Payload, State0),
+handle_call(Message, _From, State0) ->
+  {Reply, State} = send_call(Message, State0),
   {reply, Reply, State}.
 
 handle_cast(stop, State) ->
@@ -114,7 +114,7 @@ handle_info({tcp, Sock, Data}, #s{buf=Buf} = State) ->
     lists:foldl(
       fun
         ({eto, MsgData}, AccState) ->
-          handle_message(MsgData, AccState);
+          handle_sequenced(MsgData, AccState);
         ({impl, MsgData}, AccState) ->
           handle_transient(MsgData, AccState)
       end,
@@ -148,18 +148,18 @@ handle_transient(Transient, State) ->
   io:format("Transient ~p~n", [Transient]),
   State.
 
-handle_message(Data, State) when is_binary(Data) ->
-  handle_message(seto_piqi:parse_message(Data), State);
+handle_sequenced(Data, State) when is_binary(Data) ->
+  handle_sequenced(seto_piqi:parse_sequenced(Data), State);
 
-handle_message(#seto_message{seq=Seq, payload=Payload}, #s{in=InSeq} = State0) when Seq > InSeq ->
+handle_sequenced(#seto_sequenced{seq=Seq, message=Message}, #s{in=InSeq} = State0) when Seq > InSeq ->
   io:format("Replay from ~p to ~p~n", [InSeq, Seq]),
-  {_, State} = send_call({replay, #seto_replay{seq=InSeq}}, login_payload(Payload,State0)),
+  {_, State} = send_call({replay, #seto_replay{seq=InSeq}}, login_message(Message,State0)),
   State;
 
-handle_message(#seto_message{seq=Seq, payload=Payload} = _Msg, #s{in=Seq} = State) ->
-  handle_payload(Payload, State#s{in=Seq+1}).
+handle_sequenced(#seto_sequenced{seq=Seq, message=Message} = _Msg, #s{in=Seq} = State) ->
+  handle_message(Message, State#s{in=Seq+1}).
 
-handle_payload({replay, #seto_replay{seq=Seq}}, #s{session=Sess, sock=Sock} = State) ->
+handle_message({replay, #seto_replay{seq=Seq}}, #s{session=Sess, sock=Sock} = State) ->
   smk_example_message_cache:map_from(Sess, Seq,
     fun(Msg) ->
       io:format("Resending ~p~n", [replay_msg(Msg)]),
@@ -167,25 +167,25 @@ handle_payload({replay, #seto_replay{seq=Seq}}, #s{session=Sess, sock=Sock} = St
     end),
   State;
 
-handle_payload({login_response, _} = Payload, State) ->
-  login_payload(Payload, State);
+handle_message({login_response, _} = Message, State) ->
+  login_message(Message, State);
 
-handle_payload(pong, State) ->
+handle_message(pong, State) ->
   io:format(" p", []),
   State;
 
-handle_payload(Payload, State) ->
-  io:format("Received ~p~n", [Payload]),
+handle_message(Message, State) ->
+  io:format("Received ~p~n", [Message]),
   State.
 
-login_payload({login_response, #seto_login_response{session=Sess, reset=Reset}}, State) ->
+login_message({login_response, #seto_login_response{session=Sess, reset=Reset}}, State) ->
   io:format("Logged in session ~p out ~p~n", [Sess, Reset]),
   State#s{session=Sess, out=Reset};
-login_payload(_, State) ->
+login_message(_, State) ->
   State.
 
-send_call(Payload, #s{session=Sess, out=Seq, sock=Sock} = State) ->
-  Msg = #seto_message{seq=Seq, payload=Payload},
+send_call(Message, #s{session=Sess, out=Seq, sock=Sock} = State) ->
+  Msg = #seto_sequenced{seq=Seq, message=Message},
   case sock_send(Sock, Msg) of
     ok ->
       smk_example_message_cache:log(Sess, Msg),
@@ -195,15 +195,15 @@ send_call(Payload, #s{session=Sess, out=Seq, sock=Sock} = State) ->
   end.
 
 sock_send(Sock, Msg) ->
-  gen_tcp:send(Sock, seto_frame:frame(eto, seto_piqi:gen_message(Msg))).
+  gen_tcp:send(Sock, seto_frame:frame(eto, seto_piqi:gen_payload({sequenced, Msg}))).
 
-replay_msg(#seto_message{payload={replay,_}, seq=Seq}) ->
+replay_msg(#seto_sequenced{message={replay,_}, seq=Seq}) ->
   gapfill(Seq);
-replay_msg(#seto_message{payload={login,_}, seq=Seq}) ->
+replay_msg(#seto_sequenced{message={login,_}, seq=Seq}) ->
   gapfill(Seq);
 replay_msg(Msg) ->
-  Msg#seto_message{replay=true}.
+  Msg#seto_sequenced{replay=true}.
 
 gapfill(Seq) ->
-  #seto_message{payload=gapfill, replay=true, seq=Seq}.
+  #seto_sequenced{message=gapfill, replay=true, seq=Seq}.
 
