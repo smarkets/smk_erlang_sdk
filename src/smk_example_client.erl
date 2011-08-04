@@ -14,7 +14,7 @@
 
 -record(s, {
     sock,
-    buf = <<>>,
+    buf = eto_frame:buf(),
     out :: pos_integer(),
     in :: pos_integer(),
     session :: undefined | binary()
@@ -109,16 +109,14 @@ handle_cast(_Msg, State) ->
 
 handle_info({tcp, Sock, Data}, #s{buf=Buf} = State) ->
   inet:setopts(Sock, [{active,once}]),
-  {NewBuf, Messages} = seto_frame:deframe(<<Buf/binary, Data/binary>>),
+  Buf1 = eto_frame:buf_append(Buf, Data),
+  {NewBuf, Payloads} = deframe_all(Buf1, []),
   NewState =
     lists:foldl(
-      fun
-        ({eto, MsgData}, AccState) ->
-          handle_sequenced(MsgData, AccState);
-        ({impl, MsgData}, AccState) ->
-          handle_transient(MsgData, AccState)
+      fun(PayloadData, AccState) ->
+              handle_payload(seto_piqi:parse_payload(PayloadData), AccState)
       end,
-      State, Messages),
+      State, Payloads),
   {noreply, NewState#s{buf=NewBuf}};
 
 handle_info({tcp_closed, _Sock}, State) ->
@@ -141,15 +139,11 @@ code_change(_OldVsn, State, _Extra) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
-handle_transient(Data, State) when is_binary(Data) ->
-  handle_transient(seto_piqi:parse_transient(Data), State);
-handle_transient(Transient, State) ->
+handle_payload({sequenced, Sequenced}, State) ->
+  handle_sequenced(Sequenced, State);
+handle_payload({_, _} = Transient, State) ->
   io:format("Transient ~p~n", [Transient]),
   State.
-
-handle_sequenced(Data, State) when is_binary(Data) ->
-  handle_sequenced(seto_piqi:parse_sequenced(Data), State);
 
 handle_sequenced(#seto_sequenced{seq=Seq, message=Message}, #s{in=InSeq} = State0) when Seq > InSeq ->
   io:format("Replay from ~p to ~p~n", [InSeq, Seq]),
@@ -195,7 +189,7 @@ send_call(Message, #s{session=Sess, out=Seq, sock=Sock} = State) ->
   end.
 
 sock_send(Sock, Msg) ->
-  gen_tcp:send(Sock, seto_frame:frame(eto, seto_piqi:gen_payload({sequenced, Msg}))).
+  gen_tcp:send(Sock, eto_frame:frame(seto_piqi:gen_payload({sequenced, Msg}))).
 
 replay_msg(#seto_sequenced{message={replay,_}, seq=Seq}) ->
   gapfill(Seq);
@@ -207,3 +201,9 @@ replay_msg(Msg) ->
 gapfill(Seq) ->
   #seto_sequenced{message=gapfill, replay=true, seq=Seq}.
 
+deframe_all(Buf, Acc) ->
+    case eto_frame:deframe(Buf) of
+        {PayloadData, Buf1} ->
+            deframe_all(Buf1, [PayloadData|Acc]);
+        Buf1 -> {Buf1, lists:reverse(Acc)}
+    end.
