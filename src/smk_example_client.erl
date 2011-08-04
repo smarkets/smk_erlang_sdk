@@ -188,8 +188,8 @@ send_call(Message, #s{session=Sess, out=Seq, sock=Sock} = State) ->
       {Error, State}
   end.
 
-sock_send(Sock, Msg) ->
-  gen_tcp:send(Sock, eto_frame:frame(seto_piqi:gen_payload({sequenced, Msg}))).
+sock_send(Sock, Payload) ->
+  gen_tcp:send(Sock, eto_frame:frame(seto_piqi:gen_payload({sequenced, Payload}))).
 
 replay_msg(#seto_sequenced{message={replay,_}, seq=Seq}) ->
   gapfill(Seq);
