@@ -1,8 +1,6 @@
--module(smk_example_sup).
--behaviour(supervisor).
--define(SERVER, ?MODULE).
+-module(smk_sup).
 
--define(CHILD(I, Type), {I, {I, start_link, []}, permanent, brutal_kill, Type, [I]}).
+-behaviour(supervisor).
 
 %% API
 -export([start_link/0]).
@@ -10,21 +8,25 @@
 %% Supervisor callbacks
 -export([init/1]).
 
+%% Helper macro for declaring children of supervisor
+-define(CHILD(I, Args, Type, Restart), {I, {I, start_link, Args}, Restart, 5000, Type, [I]}).
+
 %% ===================================================================
 %% API functions
 %% ===================================================================
 
 start_link() ->
-  supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+  supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
 init([]) ->
+  %Cache = application:get_env(
+  Cache = smk_memory_message_cache,
   {ok, {{one_for_all, 10, 10}, [
-        ?CHILD(smk_example_message_cache, worker),
-        ?CHILD(smk_example_clients_sup, supervisor)
+        ?CHILD(Cache, [], worker, permanent),
+        ?CHILD(smk_clients_sup, [Cache], supervisor, permanent)
       ]}}.
-
 

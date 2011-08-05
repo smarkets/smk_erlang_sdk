@@ -1,4 +1,4 @@
--module(smk_example_message_cache).
+-module(smk_memory_message_cache).
 -behaviour(gen_server).
 -define(SERVER, ?MODULE).
 -define(MAX_QUEUE, 20).

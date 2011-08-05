@@ -2,6 +2,7 @@
     {description, "Smarkets API Software Development Kit for Erlang"},
     {vsn, "0"},
     {registered, []},
+    {mod, { smk_app, [] }},
     {applications, [
         kernel,
         stdlib
