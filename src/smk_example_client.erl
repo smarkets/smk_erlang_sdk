@@ -32,7 +32,7 @@
 
 %% send message
 -export([ping/1, order/6, order_cancel/2]).
--export([subscribe/2, unsubscribe/2]).
+-export([subscribe/2, unsubscribe/2, market_request/2, market_quotes_request/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -70,6 +70,15 @@ subscribe(Pid, Group) ->
 unsubscribe(Pid, Group) ->
   MessageRec = #seto_market_unsubscription{group=Group},
   gen_server:call(Pid, {market_unsubscription, MessageRec}).
+
+market_request(Pid, Group) ->
+  MessageRec = #seto_market_request{group=Group},
+  gen_server:call(Pid, {market_request, MessageRec}).
+
+market_quotes_request(Pid, Group) ->
+  MessageRec = #seto_market_quotes_request{group=Group},
+  gen_server:call(Pid, {market_quotes_request, MessageRec}).
+  
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
