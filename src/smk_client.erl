@@ -2,6 +2,7 @@
 -behaviour(gen_server).
 -define(SERVER, ?MODULE).
 
+-define(HEARTBEAT_TIMEOUT, 10000).
 -define(SOCK_OPTS, [
     binary,
     {active, once},
@@ -14,11 +15,13 @@
 
 -record(s, {
     sock,
+    heartbeat_ref :: reference(),
     buf = eto_frame:buf(),
     out :: pos_integer(),
     in :: pos_integer(),
     cache :: atom(),
     callback :: function(),
+    name :: atom(),
     session :: undefined | binary()
   }).
 
@@ -86,27 +89,31 @@ market_quotes_request(Name, Group) ->
 %% ------------------------------------------------------------------
 
 init([Cache, Opts]) ->
+  {registered_name, Name} = process_info(self(), registered_name),
   Host = proplists:get_value(host, Opts),
   Port = proplists:get_value(port, Opts),
   {ok, Sock} = gen_tcp:connect(Host, Port, ?SOCK_OPTS),
-  Out = proplists:get_value(out, Opts, 1),
-  In = proplists:get_value(in, Opts, 1),
+
+  {Session,LastIn,LastOut} = Cache:session_state(Name),
   LoginMessage = 
     {login, #seto_login{
         username=proplists:get_value(username, Opts),
         password=proplists:get_value(password, Opts),
-        session=proplists:get_value(session, Opts)
+        session=Session
       }},
   case proplists:get_value(callback, Opts) of
     undefined ->
       {stop, no_callback};
     Callback ->
-      case sock_send(Sock, #seto_sequenced{seq=Out, message=LoginMessage}) of
-        ok ->
-          {ok, #s{sock=Sock, in=In, out=Out+1, cache=Cache, callback=Callback}};
-        {error, Reason} ->
-          {stop, Reason}
-      end
+      %{ok, #s{}}
+      send_call(LoginMessage, #s{
+          session=Session,
+          name=Name,
+          sock=Sock,
+          in=LastIn+1, out=LastOut+1,
+          cache=Cache,
+          callback=Callback
+        })
   end.
 
 handle_call(seq, _From, #s{in=In, out=Out} = State) ->
@@ -121,6 +128,13 @@ handle_cast(stop, State) ->
 
 handle_cast(_Msg, State) ->
   {noreply, State}.
+
+handle_info({heartbeat_timeout, Seq}, #s{out=Seq} = State0) ->
+  {_, State} = send_call(heartbeat, State0#s{heartbeat_ref=undefined}),
+  io:format("sending heartbeat~n",[]),
+  {noreply, State};
+handle_info({heartbeat_timeout, _}, State) ->
+  {noreply, State};
 
 handle_info({tcp, Sock, Data}, #s{buf=Buf} = State) ->
   inet:setopts(Sock, [{active,once}]),
@@ -143,8 +157,7 @@ handle_info({tcp_error, _Sock, Reason}, State) ->
 handle_info(_Info, State) ->
   {noreply, State}.
 
-terminate(Reason, #s{session=Sess, in=In, out=Out}) ->
-  io:format("Terminated (~p) - to resume add opts {session,~p},{in,~p},{out,~p}~n", [Reason,Sess,In,Out]),
+terminate(_, _) ->
   ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -155,22 +168,29 @@ code_change(_OldVsn, State, _Extra) ->
 %% ------------------------------------------------------------------
 handle_payload({sequenced, Sequenced}, State) ->
   handle_sequenced(Sequenced, State);
-handle_payload(Transient, #s{callback = Callback} = State) ->
-  ok = Callback(Transient),
+handle_payload(Transient, #s{callback=Callback, session=Session} = State) ->
+  ok = Callback(Transient, Session),
   State.
 
+handle_sequenced(#seto_sequenced{seq=Seq, message={replay, _} = Message},
+                 #s{in=InSeq} = State) when Seq > InSeq ->
+  {_, State0} = send_call({replay, #seto_replay{seq=InSeq}}, State),
+  State1 = handle_message(Message, State0),
+  State1;
 handle_sequenced(#seto_sequenced{seq=Seq, message=Message}, #s{in=InSeq} = State0) when Seq > InSeq ->
   {_, State} = send_call({replay, #seto_replay{seq=InSeq}}, login_message(Message,State0)),
   State;
-
 handle_sequenced(#seto_sequenced{seq=Seq, message=Message} = Payload,
-                 #s{in=Seq, session=Session, callback=Callback} = State) ->
+                 #s{in=Seq, name=Name, session=Session, callback=Callback, cache=Cache} = State) ->
   State0 = handle_message(Message, State#s{in=Seq+1}),
+  Cache:log_in(Name, Seq),
   ok = Callback(Payload, Session),
-  State0.
+  State0;
+handle_sequenced(_, State) ->
+  State.
 
-handle_message({replay, #seto_replay{seq=Seq}}, #s{session=Sess, sock=Sock, cache=Cache} = State) ->
-  Cache:map_from(Sess, Seq,
+handle_message({replay, #seto_replay{seq=Seq}}, #s{name=Name, sock=Sock, cache=Cache} = State) ->
+  Cache:map_from(Name, Seq,
     fun(Payload) ->
       sock_send(Sock, replay_payload(Payload))
     end),
@@ -182,17 +202,20 @@ handle_message({login_response, _} = Message, State) ->
 handle_message(_Message, State) ->
   State.
 
-login_message({login_response, #seto_login_response{session=Sess, reset=Reset}}, State) ->
-  State#s{session=Sess, out=Reset};
+login_message({login_response, #seto_login_response{session=Session, reset=Reset}}, State) ->
+  #s{name=Name, cache=Cache} = State,
+  Cache:takeover_session(Name, Session),
+  State#s{session=Session, out=Reset};
 login_message(_, State) ->
   State.
 
-send_call(Message, #s{session=Sess, out=Seq, sock=Sock, cache=Cache} = State) ->
-  Msg = #seto_sequenced{seq=Seq, message=Message},
-  case sock_send(Sock, Msg) of
+send_call(Message, #s{name=Name, out=Seq, sock=Sock, cache=Cache, heartbeat_ref=Ref} = State) ->
+  Payload = #seto_sequenced{seq=Seq, message=Message},
+  case sock_send(Sock, Payload) of
     ok ->
-      Cache:log(Sess, Msg),
-      {ok, State#s{out=Seq+1}};
+      Cache:log_out(Name, Payload),
+      Out = Seq+1,
+      {ok, State#s{out=Out, heartbeat_ref=heartbeat_timer(Ref, Out)}};
     Error ->
       {Error, State}
   end.
@@ -216,3 +239,10 @@ deframe_all(Buf, Acc) ->
             deframe_all(Buf1, [PayloadData|Acc]);
         Buf1 -> {Buf1, lists:reverse(Acc)}
     end.
+
+heartbeat_timer(undefined, Seq) ->
+  {ok, Ref} = timer:send_after(?HEARTBEAT_TIMEOUT, {heartbeat_timeout, Seq}),
+  Ref;
+heartbeat_timer(Ref, Seq) ->
+  timer:cancel(Ref),
+  heartbeat_timer(undefined, Seq).

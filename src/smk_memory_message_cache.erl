@@ -18,7 +18,8 @@
 -export([start_link/0]).
 
 %% send payloads
--export([log/2, map_from/3]).
+-export([log_out/2, log_in/2, map_from/3, session_state/1, takeover_session/2]).
+%% incoming
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -33,11 +34,20 @@
 start_link() ->
   gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-log(Sess, Msg) ->
-  gen_server:call(?SERVER, {log, Sess, Msg}).
+log_out(ClientName, Payload) ->
+  gen_server:call(?SERVER, {log_out, ClientName, Payload}).
 
-map_from(Sess, Seq, Fun) ->
-  gen_server:call(?SERVER, {map_from, Sess, Seq, Fun}).
+log_in(ClientName, Seq) ->
+  gen_server:call(?SERVER, {log_in, ClientName, Seq}).
+
+map_from(ClientName, Seq, Fun) ->
+  gen_server:call(?SERVER, {map_from, ClientName, Seq, Fun}).
+
+session_state(ClientName) ->
+  gen_server:call(?SERVER, {session_state, ClientName}).
+
+takeover_session(ClientName, Session) ->
+  gen_server:call(?SERVER, {takeover_session, ClientName, Session}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -46,11 +56,30 @@ map_from(Sess, Seq, Fun) ->
 init([]) ->
   {ok, #s{cache=gb_trees:empty()}}.
 
-handle_call({log, Sess, Msg}, _From, State) ->
-  {reply, ok, do_log(Sess, Msg, State)};
+handle_call({log_out, ClientName, Payload}, _From, State) ->
+  {reply, ok, do_log(ClientName, Payload, State)};
 
-handle_call({map_from, Sess, Seq, Fun}, _From, #s{cache=Cache} = State) ->
-  {reply, do_map_from(Sess, Seq, Fun, Cache), State};
+handle_call({log_in, ClientName, Seq}, _From, #s{cache=Cache} = State) ->
+  {Session,_,Out,Q} = gb_trees:get(ClientName, Cache),
+  {reply, ok, State#s{cache = gb_trees:update(ClientName, {Session,Seq,Out,Q}, Cache)}};
+
+handle_call({map_from, ClientName, Seq, Fun}, _From, #s{cache=Cache} = State) ->
+  {reply, do_map_from(ClientName, Seq, Fun, Cache), State};
+
+handle_call({takeover_session, ClientName, Session}, _From, #s{cache=Cache} = State) ->
+  {_,In,Out,Q} = gb_trees:get(ClientName, Cache),
+  {reply, ok, State#s{
+      cache = gb_trees:update(ClientName, {Session,In,Out,Q}, Cache)
+    }};
+
+handle_call({session_state, ClientName}, _From, #s{cache=Cache} = State) ->
+  Reply =
+    case gb_trees:lookup(ClientName, Cache) of
+      none -> {undefined,0,0};
+      {value, {undefined,_,_,_}} -> {undefined,0,0};
+      {value, {Session,In,Out,_}} -> {Session,In,Out}
+    end,
+  {reply, Reply, State};
 
 handle_call(_, _, State) ->
   {noreply, State}.
@@ -71,29 +100,29 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-do_log(Sess, Msg, #s{cache=Cache} = State) ->
+do_log(ClientName, #seto_sequenced{seq=Out} = Payload, #s{cache=Cache} = State) ->
   State#s{cache =
-    case gb_trees:lookup(Sess, Cache) of
+    case gb_trees:lookup(ClientName, Cache) of
       none ->
-        gb_trees:enter(Sess, queue:from_list([Msg]), Cache);
-      {value, Q} ->
-        gb_trees:update(Sess,
-          queue:in(Msg,
-            case queue:len(Q) of
-              ?MAX_QUEUE ->
-                element(2, queue:out(Q));
-              _ ->
-                Q
-            end), Cache)
+        gb_trees:enter(ClientName, {undefined,1,Out,queue:from_list([Payload])}, Cache);
+      {value, {Session,In,_,Q}} ->
+        gb_trees:update(ClientName,
+          {Session,In,Out,queue:in(Payload,
+              case queue:len(Q) of
+                ?MAX_QUEUE ->
+                  element(2, queue:out(Q));
+                _ ->
+                  Q
+              end)}, Cache)
     end}.
 
-do_map_from(Sess, FromSeq, Fun, Cache) ->
-  case gb_trees:lookup(Sess, Cache) of
+do_map_from(ClientName, FromSeq, Fun, Cache) ->
+  case gb_trees:lookup(ClientName, Cache) of
     none -> {error, empty_cache};
-    {value, Q} ->
+    {value, {_Session,_In,_Out,Q}} ->
       lists:foldl(fun
-        (#seto_sequenced{seq=Seq} = Msg, Seq) ->
-          Fun(Msg),
+        (#seto_sequenced{seq=Seq} = Payload, Seq) ->
+          Fun(Payload),
           Seq+1; 
         (_, NextSeq) ->
           NextSeq 

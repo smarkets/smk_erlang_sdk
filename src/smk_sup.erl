@@ -23,8 +23,12 @@ start_link() ->
 %% ===================================================================
 
 init([]) ->
-  %Cache = application:get_env(
-  Cache = smk_memory_message_cache,
+  Cache =
+    case application:get_env(smk_erlang_sdk, cache) of
+      {ok, C} -> C;
+      _ ->
+        smk_memory_message_cache
+    end,
   {ok, {{one_for_all, 10, 10}, [
         ?CHILD(Cache, [], worker, permanent),
         ?CHILD(smk_clients_sup, [Cache], supervisor, permanent)

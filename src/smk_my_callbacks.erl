@@ -4,7 +4,8 @@
 
 start(Username, Password) ->
   smk_clients_sup:start_client({local, ?MODULE}, [
-      {host,"api-dev.corp.smarkets.com"},
+      %{host,"api-dev.corp.smarkets.com"},
+      {host,"10.100.1.188"},
       {port,3701},
       {username,Username},
       {password,Password},
