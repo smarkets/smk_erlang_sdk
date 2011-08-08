@@ -12,6 +12,6 @@ start(Username, Password) ->
       {callback, fun ?MODULE:cb/2}
     ]).
 
-cb(Payload, Session) ->
-  io:format("Payload Received for session ~p : ~p~n", [Session, Payload]),
+cb(_Payload, _Session) ->
+  %io:format("Payload Received for session ~p : ~p~n", [Session, Payload]),
   ok.

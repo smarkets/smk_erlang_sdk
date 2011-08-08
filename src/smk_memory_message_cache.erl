@@ -19,6 +19,7 @@
 
 %% send payloads
 -export([log_out/2, log_in/2, map_from/3, session_state/1, takeover_session/2]).
+-export([connecting/1]).
 %% incoming
 
 %% ------------------------------------------------------------------
@@ -49,6 +50,10 @@ session_state(ClientName) ->
 takeover_session(ClientName, Session) ->
   gen_server:call(?SERVER, {takeover_session, ClientName, Session}).
 
+connecting(ClientName) ->
+  gen_server:cast(?SERVER, {connecting, ClientName}).
+
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -60,29 +65,45 @@ handle_call({log_out, ClientName, Payload}, _From, State) ->
   {reply, ok, do_log(ClientName, Payload, State)};
 
 handle_call({log_in, ClientName, Seq}, _From, #s{cache=Cache} = State) ->
-  {Session,_,Out,Q} = gb_trees:get(ClientName, Cache),
-  {reply, ok, State#s{cache = gb_trees:update(ClientName, {Session,Seq,Out,Q}, Cache)}};
+  {Session,T,_,Out,Q} = gb_trees:get(ClientName, Cache),
+  {reply, ok, State#s{cache = gb_trees:update(ClientName, {Session,T,Seq,Out,Q}, Cache)}};
 
 handle_call({map_from, ClientName, Seq, Fun}, _From, #s{cache=Cache} = State) ->
   {reply, do_map_from(ClientName, Seq, Fun, Cache), State};
 
 handle_call({takeover_session, ClientName, Session}, _From, #s{cache=Cache} = State) ->
-  {_,In,Out,Q} = gb_trees:get(ClientName, Cache),
+  {_,T,In,Out,Q} = gb_trees:get(ClientName, Cache),
   {reply, ok, State#s{
-      cache = gb_trees:update(ClientName, {Session,In,Out,Q}, Cache)
+      cache = gb_trees:update(ClientName, {Session,T,In,Out,Q}, Cache)
     }};
 
 handle_call({session_state, ClientName}, _From, #s{cache=Cache} = State) ->
-  Reply =
+  {reply,
     case gb_trees:lookup(ClientName, Cache) of
-      none -> {undefined,0,0};
-      {value, {undefined,_,_,_}} -> {undefined,0,0};
-      {value, {Session,In,Out,_}} -> {Session,In,Out}
+      none ->
+        {undefined,undefined,0,0};
+      {value, {undefined,T,_,_,_}} ->
+        {undefined,T,0,0};
+      {value, {Session,T,In,Out,_}} ->
+        {Session,T,In,Out}
     end,
-  {reply, Reply, State};
+    State};
 
 handle_call(_, _, State) ->
   {noreply, State}.
+
+handle_cast({connecting, ClientName}, #s{cache=Cache} = State) ->
+  {noreply, State#s{
+      cache =
+        case gb_trees:lookup(ClientName, Cache) of
+          none ->
+            gb_trees:enter(ClientName, {undefined,now(),0,0,queue:new()}, Cache);
+          {value, {undefined,_T,In,Out,Q}} ->
+            gb_trees:update(ClientName, {undefined,now(),In,Out,Q}, Cache);
+          {value, {Session,_T,In,Out,Q}} ->
+            gb_trees:update(ClientName, {Session,now(),In,Out,Q}, Cache)
+        end
+    }};
 
 handle_cast(_Msg, State) ->
   {noreply, State}.
@@ -100,14 +121,19 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-do_log(ClientName, #seto_sequenced{seq=Out} = Payload, #s{cache=Cache} = State) ->
+do_log(ClientName, #seto_sequenced{seq=Out, message=Message} = Payload, #s{cache=Cache} = State) ->
   State#s{cache =
     case gb_trees:lookup(ClientName, Cache) of
       none ->
-        gb_trees:enter(ClientName, {undefined,1,Out,queue:from_list([Payload])}, Cache);
-      {value, {Session,In,_,Q}} ->
+        gb_trees:enter(ClientName, {undefined,now(),1,Out,queue:from_list([Payload])}, Cache);
+      {value, {Session,T,In,_,Q}} ->
+        NewT =
+          case Message of
+            {login,_} -> now();
+            _ -> T
+          end,
         gb_trees:update(ClientName,
-          {Session,In,Out,queue:in(Payload,
+          {Session,NewT,In,Out,queue:in(Payload,
               case queue:len(Q) of
                 ?MAX_QUEUE ->
                   element(2, queue:out(Q));
@@ -119,7 +145,7 @@ do_log(ClientName, #seto_sequenced{seq=Out} = Payload, #s{cache=Cache} = State) 
 do_map_from(ClientName, FromSeq, Fun, Cache) ->
   case gb_trees:lookup(ClientName, Cache) of
     none -> {error, empty_cache};
-    {value, {_Session,_In,_Out,Q}} ->
+    {value, {_Session,_T,_In,_Out,Q}} ->
       lists:foldl(fun
         (#seto_sequenced{seq=Seq} = Payload, Seq) ->
           Fun(Payload),
