@@ -18,16 +18,16 @@ The resulting Erlang code is generated for by piqic and will be in erl/seto_piqi
 An example client is available in src/smk_example_client.erl - to start it up simply crack open the Erlang shell and start typing:
 
     erl -pa ebin/ deps/*/ebin
-    1> smk_example_sup:start_link().
+    1> application:start(smk_erlang_sdk).
     {ok, <0.34.0>}
-    1> {ok, C} = smk_example_clients_sup:start_client([{host,"10.100.1.188"},{port,3701},{username,<<"name@email.com">>},{password,<<"password">>}]).
+    1> smk_my_callbacks:start(<<"name@email.com">>,<<"password">>).
     {ok, <0.38.0>}
     Received {seto_message,1,
                  {login_response,
                      {seto_login_response_payload,
                          <<"0074c6ac-8954-44db-aee0-72ecb5fd7dd0">>}},
                  false}
-    2> smk_example_client:order(C, 400000, <<"25">>, buy, <<"000000000000000000000001dc91c024">>, <<"000000000000000000000002ab9acccc">>).
+    2> smk_client:order(smk_my_callbacks, 400000, <<"25">>, buy, <<"000000000000000000000001dc91c024">>, <<"000000000000000000000002ab9acccc">>).
     ok
     Received {seto_message,2,
                  {order_accepted,
@@ -35,12 +35,13 @@ An example client is available in src/smk_example_client.erl - to start it up si
                          <<"b343e1d8-1427-46fa-b1e0-06542b5ab2da">>,
                          <<"000000000000010980d9111efe41fff0">>}},
                  false}  
-    3>  smk_example_client:order_cancel(C, <<"000000000000010980d9111efe41fff0">>).
+    3> smk_client:order_cancel(smk_my_callbacks, <<"000000000000010980d9111efe41fff0">>).
     ok
     Received {seto_message,3,
                  {order_cancelled,
                      {seto_order_cancelled_payload,
                          <<"000000000000010980d9111efe41fff0">>}},
                  false}
+    4> smk_client:subscribe(smk_my_callbacks, <<"000000000000000000000001dc91c024">>).
 
 As you can see from the above example the actual calls return ok, this means that the message was sent to Smarkets, the response is asyncronously sent back from Smarkets and is just printed out. By being asyncronous it is possible to make more than one order before receiving the confirmation from the first.

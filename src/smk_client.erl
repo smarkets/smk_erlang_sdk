@@ -209,7 +209,6 @@ logging_out(stop, State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 handle_payload({sequenced, Sequenced}, StateName, State) ->
-  lager:info("~p: Received {sequenced, ~p}~n", [StateName, Sequenced]),
   handle_sequenced(Sequenced, StateName, State);
 handle_payload(Transient, StateName, #s{callback=Callback, session=Session} = State) ->
   ok = Callback(Transient, Session),
@@ -231,6 +230,7 @@ handle_sequenced(#seto_sequenced{seq=Seq, message=heartbeat}, StateName, #s{in=S
   {StateName, State#s{in=Seq+1}};
 handle_sequenced(#seto_sequenced{seq=Seq, message=Message} = Payload, StateName,
                  #s{in=Seq, name=Name, session=Session, callback=Callback, cache=Cache} = State) ->
+  lager:info("~p: Received {sequenced, ~p}~n", [StateName, Payload]),
   {NewStateName, NewState} = handle_message(Message, StateName, State#s{in=Seq+1}),
   Cache:log_in(Name, Seq),
   ok = Callback(Payload, Session),
@@ -259,8 +259,11 @@ login_message(_, StateName, State) ->
   {StateName, State}.
 
 send_call(Message, #s{name=Name, out=Seq, sock=Sock, cache=Cache, heartbeat_ref=Ref} = State) ->
+  case Message of
+    heartbeat -> ok;
+    _ -> lager:info("sending: ~p ~p", [Seq, Message])
+  end,
   Payload = #seto_sequenced{seq=Seq, message=Message},
-  lager:info("Sending ~p ~p~n", [Sock, Payload]),
   case sock_send(Sock, Payload) of
     ok ->
       Cache:log_out(Name, Payload),
