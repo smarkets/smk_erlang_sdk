@@ -99,7 +99,7 @@ init([Cache, Opts]) ->
       {stop, normal};
     Callback ->
       Backoff = backoff(T),
-      lager:info("connection backoff ~p", [Backoff]),
+      lager:info("connection backoff ~p, cache ~p", [Backoff, Cache]),
       timer:send_after(Backoff, {connect, Opts}),
       {ok, awaiting_session, #s{
             session=Session,
@@ -117,7 +117,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
   {next_state, StateName, State}.
 
 handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Name} = State) ->
-  Login = 
+  Login =
     {login, #seto_login{
         username=proplists:get_value(username, Opts),
         password=proplists:get_value(password, Opts),

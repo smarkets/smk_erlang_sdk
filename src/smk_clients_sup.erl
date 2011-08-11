@@ -23,8 +23,11 @@ start_client(Name, Opts) ->
 %% ===================================================================
 
 init([Cache]) ->
+  Restart =
+    case application:get_env(smk_erlang_sdk, restart_strategy) of
+      {ok, R} -> R;
+      _ -> transient
+    end,
   {ok, {{simple_one_for_one, 10, 10},
       [{undefined, {smk_client, start_link, [Cache]},
-          transient, brutal_kill, worker, [smk_client]}]}}.
-
-
+          Restart, brutal_kill, worker, [smk_client]}]}}.
