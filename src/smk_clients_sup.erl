@@ -3,7 +3,7 @@
 -define(SERVER, ?MODULE).
 
 %% API
--export([start_link/1, start_client/2]).
+-export([start_link/1, start_client/1, start_client/2]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -14,6 +14,9 @@
 
 start_link(Cache) ->
   supervisor:start_link({local, ?SERVER}, ?MODULE, [Cache]).
+
+start_client(Opts) ->
+  supervisor:start_child(?SERVER, [Opts]).
 
 start_client(Name, Opts) ->
   supervisor:start_child(?SERVER, [Name, Opts]).
