@@ -128,6 +128,7 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
     {login, #seto_login{
         username=proplists:get_value(username, Opts),
         password=proplists:get_value(password, Opts),
+        token=proplists:get_value(token, Opts),
         session=Session
       }},
   Host = proplists:get_value(host, Opts),
