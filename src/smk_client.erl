@@ -34,7 +34,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/3, stop/1]).
+-export([start_link/2, start_link/3, stop/1]).
 
 %% send message
 -export([ping/1, order/6, order_cancel/2]).
@@ -53,6 +53,9 @@
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
+
+start_link(Cache, Opts) ->
+  gen_fsm:start_link(?MODULE, [Cache,Opts], []).
 
 start_link(Cache, Name, Opts) ->
   gen_fsm:start_link(Name, ?MODULE, [Cache,Opts], []).
@@ -92,7 +95,11 @@ message(Name, Message) ->
 %% ------------------------------------------------------------------
 
 init([Cache, Opts]) ->
-  {registered_name, Name} = process_info(self(), registered_name),
+  Name =
+    case process_info(self(), registered_name) of
+      {registered_name, N} -> N;
+      [] -> self() %% temporary client case
+    end,
   {Session,T,LastIn,LastOut} = Cache:session_state(Name),
   case proplists:get_value(callback, Opts) of
     undefined ->
@@ -100,7 +107,7 @@ init([Cache, Opts]) ->
       {stop, normal};
     Callback ->
       Backoff = backoff(T),
-      lager:info("connection backoff ~p", [Backoff]),
+      lager:info("connection backoff ~p, cache ~p", [Backoff, Cache]),
       timer:send_after(Backoff, {connect, Opts}),
       {ok, awaiting_session, #s{
             session=Session,
@@ -118,7 +125,7 @@ handle_sync_event(_Event, _From, StateName, State) ->
   {next_state, StateName, State}.
 
 handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Name} = State) ->
-  Login = 
+  Login =
     {login, #seto_login{
         username=proplists:get_value(username, Opts),
         password=proplists:get_value(password, Opts),

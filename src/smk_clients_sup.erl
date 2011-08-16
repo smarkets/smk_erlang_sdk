@@ -3,7 +3,7 @@
 -define(SERVER, ?MODULE).
 
 %% API
--export([start_link/1, start_client/2]).
+-export([start_link/1, start_client/1, start_client/2]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -15,6 +15,9 @@
 start_link(Cache) ->
   supervisor:start_link({local, ?SERVER}, ?MODULE, [Cache]).
 
+start_client(Opts) ->
+  supervisor:start_child(?SERVER, [Opts]).
+
 start_client(Name, Opts) ->
   supervisor:start_child(?SERVER, [Name, Opts]).
 
@@ -23,8 +26,11 @@ start_client(Name, Opts) ->
 %% ===================================================================
 
 init([Cache]) ->
+  Restart =
+    case application:get_env(smk_erlang_sdk, restart_strategy) of
+      {ok, R} -> R;
+      _ -> transient
+    end,
   {ok, {{simple_one_for_one, 10, 10},
       [{undefined, {smk_client, start_link, [Cache]},
-          transient, brutal_kill, worker, [smk_client]}]}}.
-
-
+          Restart, brutal_kill, worker, [smk_client]}]}}.

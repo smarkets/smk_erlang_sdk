@@ -33,4 +33,3 @@ init([]) ->
         ?CHILD(Cache, [], worker, permanent),
         ?CHILD(smk_clients_sup, [Cache], supervisor, permanent)
       ]}}.
-
