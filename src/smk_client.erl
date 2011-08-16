@@ -38,7 +38,8 @@
 
 %% send message
 -export([ping/1, order/6, order_cancel/2]).
--export([subscribe/2, unsubscribe/2, market_request/2, market_quotes_request/2]).
+-export([subscribe/2, unsubscribe/2, market_quotes_request/2]).
+-export([message/2]).
 
 %% ------------------------------------------------------------------
 %% gen_fsm Function Exports
@@ -78,13 +79,13 @@ unsubscribe(Name, Group) ->
   MessageRec = #seto_market_unsubscription{group=Group},
   gen_fsm:sync_send_event(Name, {market_unsubscription, MessageRec}).
 
-market_request(Name, Group) ->
-  MessageRec = #seto_market_request{group=Group},
-  gen_fsm:sync_send_event(Name, {market_request, MessageRec}).
-
 market_quotes_request(Name, Group) ->
   MessageRec = #seto_market_quotes_request{group=Group},
   gen_fsm:sync_send_event(Name, {market_quotes_request, MessageRec}).
+
+message(Name, Message) ->
+  gen_fsm:sync_send_event(Name, Message).
+
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
