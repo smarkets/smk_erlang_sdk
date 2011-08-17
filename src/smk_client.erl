@@ -15,6 +15,7 @@
     {nodelay, true}
   ]).
 
+-include("eto_piqi.hrl").
 -include("seto_piqi.hrl").
 
 -record(s, {
@@ -27,7 +28,7 @@
     callback :: function(),
     name :: atom(),
     session :: undefined | binary(),
-    logout_reason :: seto_logout_reason()
+    logout_reason :: eto_logout_reason()
   }).
 
 %% ------------------------------------------------------------------
@@ -66,24 +67,24 @@ stop(Name) ->
 ping(Name) ->
   gen_fsm:sync_send_event(Name, ping).
 
-order(Name, Qty, Px, Side, Cg, C) ->
-  MessageRec = #seto_order_create{quantity=Qty, price=Px, side=Side, group=Cg, contract=C},
+order(Name, Qty, Px, Side, Mkt, C) ->
+  MessageRec = #seto_order_create{quantity=Qty, price=Px, side=Side, market=Mkt, contract=C},
   gen_fsm:sync_send_event(Name, {order_create, MessageRec}).
 
 order_cancel(Name, Order) ->
   MessageRec = #seto_order_cancel{order=Order},
   gen_fsm:sync_send_event(Name, {order_cancel, MessageRec}).
 
-subscribe(Name, Group) ->
-  MessageRec = #seto_market_subscription{group=Group},
+subscribe(Name, Mkt) ->
+  MessageRec = #seto_market_subscription{market=Mkt},
   gen_fsm:sync_send_event(Name, {market_subscription, MessageRec}).
 
-unsubscribe(Name, Group) ->
-  MessageRec = #seto_market_unsubscription{group=Group},
+unsubscribe(Name, Mkt) ->
+  MessageRec = #seto_market_unsubscription{market=Mkt},
   gen_fsm:sync_send_event(Name, {market_unsubscription, MessageRec}).
 
-market_quotes_request(Name, Group) ->
-  MessageRec = #seto_market_quotes_request{group=Group},
+market_quotes_request(Name, Mkt) ->
+  MessageRec = #seto_market_quotes_request{market=Mkt},
   gen_fsm:sync_send_event(Name, {market_quotes_request, MessageRec}).
 
 message(Name, Message) ->
@@ -126,12 +127,17 @@ handle_sync_event(_Event, _From, StateName, State) ->
   {next_state, StateName, State}.
 
 handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Name} = State) ->
-  Login =
-    {login, #seto_login{
-        username=proplists:get_value(username, Opts),
-        password=proplists:get_value(password, Opts),
-        session=Session
-      }},
+  Login = #seto_payload{
+    eto_payload=#eto_payload{
+      type=login,
+      login=#eto_login{session_id=Session}
+    },
+    type=login,
+    login=#seto_login{
+      username=proplists:get_value(username, Opts),
+      password=proplists:get_value(password, Opts)
+    }
+  },
   Host = proplists:get_value(host, Opts),
   Port = proplists:get_value(port, Opts),
   Cache:connecting(Name),
@@ -208,7 +214,9 @@ awaiting_session(stop, State) ->
   {next_state, awaiting_session, State}.
 
 logged_in(stop, State0) ->
-  {ok, State} = send_call({logout, #seto_logout{}}, State0),
+  {ok, State} = send_call(
+    #seto_payload{type=eto, eto_payload=#eto_payload{type=logout,logout=#eto_logout{reason=none}}},
+    State0),
   {next_state, logged_in, State}.
 
 logging_out(stop, State) ->
@@ -223,59 +231,66 @@ handle_payload(Transient, StateName, #s{callback=Callback, session=Session} = St
   ok = Callback(Transient, Session),
   {StateName, State}.
 
-handle_sequenced(#seto_sequenced{seq=Seq, message={replay, _} = Message}, StateName,
+handle_sequenced(#seto_payload{eto_payload=#eto_payload{seq=Seq, type=replay}} = Payload, StateName,
                  #s{in=InSeq} = State) when Seq > InSeq ->
-  handle_message(Message, StateName, State);
-handle_sequenced(#seto_sequenced{seq=Seq, message=Message}=Payload, StateName, #s{in=InSeq} = State) when Seq > InSeq ->
-  {NewStateName, State0} = login_message(Message, StateName, State),
+  handle_message(Payload, StateName, State);
+handle_sequenced(#seto_payload{eto_payload=#eto_payload{seq=Seq}}=Payload, StateName, #s{in=InSeq} = State) when Seq > InSeq ->
+  {NewStateName, State0} = login_message(Payload, StateName, State),
   lager:info("~p: Received {sequenced, ~p}~n", [StateName, Payload]),
-  {ok, NewState} = send_call({replay, #seto_replay{seq=InSeq}}, State0),
+  {ok, NewState} = send_call(#seto_payload{type=eto, eto_payload=#eto_payload{type=replay, replay=#eto_replay{seq=InSeq}}}, State0),
   {NewStateName, NewState};
 
-handle_sequenced(#seto_sequenced{seq=Seq, message={logout, #seto_logout{reason=Reason}}}, _StateName,
+handle_sequenced(#seto_payload{eto_payload=#eto_payload{seq=Seq, logout=#eto_logout{reason=Reason}}}, _StateName,
                  #s{in=Seq, cache=Cache, name=Name} = State) ->
   Cache:log_in(Name, Seq),
   {logging_out, State#s{logout_reason=Reason, in=Seq+1}};
-handle_sequenced(#seto_sequenced{seq=Seq, message=heartbeat}, StateName,
+handle_sequenced(#seto_payload{eto_payload=#eto_payload{seq=Seq, type=heartbeat}}, StateName,
                  #s{in=Seq, cache=Cache, name=Name} = State) ->
   Cache:log_in(Name, Seq),
   {StateName, State#s{in=Seq+1}};
-handle_sequenced(#seto_sequenced{seq=Seq, message=Message} = Payload, StateName,
+handle_sequenced(#seto_payload{eto_payload=#eto_payload{seq=Seq}} = Payload, StateName,
                  #s{in=Seq, name=Name, session=Session, callback=Callback, cache=Cache} = State) ->
   lager:info("~p: Received {sequenced, ~p}~n", [StateName, Payload]),
-  {NewStateName, NewState} = handle_message(Message, StateName, State#s{in=Seq+1}),
+  {NewStateName, NewState} = handle_message(Payload, StateName, State#s{in=Seq+1}),
   Cache:log_in(Name, Seq),
   ok = Callback(Payload, Session),
   {NewStateName, NewState};
 handle_sequenced(_, StateName, State) ->
   {StateName, State}.
 
-handle_message({replay, #seto_replay{seq=Seq}}, StateName, #s{name=Name, sock=Sock, cache=Cache} = State) ->
+handle_message(#seto_payload{eto_payload=#eto_payload{replay=#eto_replay{seq=Seq}}},
+    StateName, #s{name=Name, sock=Sock, cache=Cache} = State) ->
   Cache:map_from(Name, Seq,
     fun(Payload) ->
       sock_send(Sock, replay_payload(Payload))
     end),
   {StateName, State};
 
-handle_message({login_response, _} = Message, StateName, State) ->
+handle_message(#seto_payload{eto_payload=#eto_payload{type=login_response}} = Message, StateName, State) ->
   login_message(Message, StateName, State);
 
 handle_message(_Message, StateName, State) ->
   {StateName, State}.
 
-login_message({login_response, #seto_login_response{session=Session, reset=Reset}}, _StateName, State) ->
+login_message(
+  #seto_payload{
+    eto_payload=#eto_payload{
+      login_response=#eto_login_response{
+        session_id=Session,
+        reset=Reset
+      }}}, _StateName, State) ->
   #s{name=Name, cache=Cache} = State,
   Cache:takeover_session(Name, Session),
   {logged_in, State#s{session=Session, out=Reset}};
 login_message(_, StateName, State) ->
   {StateName, State}.
 
-send_call(Message, #s{name=Name, out=Seq, sock=Sock, cache=Cache, heartbeat_ref=Ref} = State) ->
-  case Message of
-    heartbeat -> ok;
-    _ -> lager:info("sending: ~p ~p", [Seq, Message])
+send_call(#seto_payload{eto_payload=Eto}=Payload0, #s{name=Name, out=Seq, sock=Sock, cache=Cache, heartbeat_ref=Ref} = State) ->
+  Payload = Payload0#seto_payload{eto_payload=Eto#eto_payload{seq=Seq}},
+  case Payload of
+    #seto_payload{eto_payload=#eto_payload{type=heartbeat}} -> ok;
+    _ -> lager:info("sending: ~p ~p", [Seq, Payload])
   end,
-  Payload = #seto_sequenced{seq=Seq, message=Message},
   case sock_send(Sock, Payload) of
     ok ->
       Cache:log_out(Name, Payload),
@@ -286,17 +301,17 @@ send_call(Message, #s{name=Name, out=Seq, sock=Sock, cache=Cache, heartbeat_ref=
   end.
 
 sock_send(Sock, Payload) ->
-  gen_tcp:send(Sock, eto_frame:frame(seto_piqi:gen_payload({sequenced, Payload}))).
+  gen_tcp:send(Sock, eto_frame:frame(seto_piqi:gen_payload(Payload))).
 
-replay_payload(#seto_sequenced{message={replay,_}, seq=Seq}) ->
+replay_payload(#seto_payload{eto_payload=#eto_payload{type=replay, seq=Seq}}) ->
   gapfill(Seq);
-replay_payload(#seto_sequenced{message={login,_}, seq=Seq}) ->
+replay_payload(#seto_payload{eto_payload=#eto_payload{type=login, seq=Seq}}) ->
   gapfill(Seq);
-replay_payload(Payload) ->
-  Payload#seto_sequenced{replay=true}.
+replay_payload(#seto_payload{eto_payload=Eto} = Payload) ->
+  Payload#seto_payload{eto_payload=Eto#eto_payload{is_replay=true}}.
 
 gapfill(Seq) ->
-  #seto_sequenced{message=gapfill, replay=true, seq=Seq}.
+  #seto_payload{type=eto, eto_payload=#eto_payload{type=gapfill, is_replay=true, seq=Seq}}.
 
 deframe_all(Buf, Acc) ->
     case eto_frame:deframe(Buf) of
