@@ -38,7 +38,8 @@
 
 %% send message
 -export([ping/1, order/6, order_cancel/2]).
--export([subscribe/2, unsubscribe/2, market_request/2, market_quotes_request/2]).
+-export([subscribe/2, unsubscribe/2, market_quotes_request/2]).
+-export([message/2]).
 
 %% ------------------------------------------------------------------
 %% gen_fsm Function Exports
@@ -81,13 +82,13 @@ unsubscribe(Name, Group) ->
   MessageRec = #seto_market_unsubscription{group=Group},
   gen_fsm:sync_send_event(Name, {market_unsubscription, MessageRec}).
 
-market_request(Name, Group) ->
-  MessageRec = #seto_market_request{group=Group},
-  gen_fsm:sync_send_event(Name, {market_request, MessageRec}).
-
 market_quotes_request(Name, Group) ->
   MessageRec = #seto_market_quotes_request{group=Group},
   gen_fsm:sync_send_event(Name, {market_quotes_request, MessageRec}).
+
+message(Name, Message) ->
+  gen_fsm:sync_send_event(Name, Message).
+
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -100,6 +101,7 @@ init([Cache, Opts]) ->
       [] -> self() %% temporary client case
     end,
   {Session,T,LastIn,LastOut} = Cache:session_state(Name),
+  lager:info("LastIn ~p LastOut ~p", [LastIn, LastOut]),
   case proplists:get_value(callback, Opts) of
     undefined ->
       lager:error("callback not defined"),
@@ -225,16 +227,19 @@ handle_payload(Transient, StateName, #s{callback=Callback, session=Session} = St
 handle_sequenced(#seto_sequenced{seq=Seq, message={replay, _} = Message}, StateName,
                  #s{in=InSeq} = State) when Seq > InSeq ->
   handle_message(Message, StateName, State);
-handle_sequenced(#seto_sequenced{seq=Seq, message=Message}, StateName, #s{in=InSeq} = State) when Seq > InSeq ->
+handle_sequenced(#seto_sequenced{seq=Seq, message=Message}=Payload, StateName, #s{in=InSeq} = State) when Seq > InSeq ->
   {NewStateName, State0} = login_message(Message, StateName, State),
+  lager:info("~p: Received {sequenced, ~p}~n", [StateName, Payload]),
   {ok, NewState} = send_call({replay, #seto_replay{seq=InSeq}}, State0),
   {NewStateName, NewState};
 
 handle_sequenced(#seto_sequenced{seq=Seq, message={logout, #seto_logout{reason=Reason}}}, _StateName,
                  #s{in=Seq, cache=Cache, name=Name} = State) ->
   Cache:log_in(Name, Seq),
-  {logging_out, State#s{logout_reason=Reason}};
-handle_sequenced(#seto_sequenced{seq=Seq, message=heartbeat}, StateName, #s{in=Seq} = State) ->
+  {logging_out, State#s{logout_reason=Reason, in=Seq+1}};
+handle_sequenced(#seto_sequenced{seq=Seq, message=heartbeat}, StateName,
+                 #s{in=Seq, cache=Cache, name=Name} = State) ->
+  Cache:log_in(Name, Seq),
   {StateName, State#s{in=Seq+1}};
 handle_sequenced(#seto_sequenced{seq=Seq, message=Message} = Payload, StateName,
                  #s{in=Seq, name=Name, session=Session, callback=Callback, cache=Cache} = State) ->
