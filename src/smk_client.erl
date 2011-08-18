@@ -80,7 +80,7 @@ order(Name, Qty, Px, Side, Mkt, C) ->
         type=limit,
         market=Mkt, contract=C, side=Side,
         quantity_type=payoff_currency,
-        quantity=Qty, display_quantity=Qty,
+        quantity=Qty,
         price_type=percent_odds,
         price=Px
       }}).
