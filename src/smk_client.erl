@@ -40,7 +40,7 @@
 %% send message
 -export([ping/1, order/6, order_cancel/2]).
 -export([subscribe/2, unsubscribe/2, market_quotes_request/2]).
--export([message/2]).
+-export([payload/2]).
 
 %% ------------------------------------------------------------------
 %% gen_fsm Function Exports
@@ -65,30 +65,64 @@ stop(Name) ->
   gen_fsm:send_event(Name, stop).
 
 ping(Name) ->
-  gen_fsm:sync_send_event(Name, ping).
+  gen_fsm:sync_send_event(Name,
+    #seto_payload{
+      eto_payload=#eto_payload{type=ping},
+      type=eto
+    }).
 
 order(Name, Qty, Px, Side, Mkt, C) ->
-  MessageRec = #seto_order_create{quantity=Qty, price=Px, side=Side, market=Mkt, contract=C},
-  gen_fsm:sync_send_event(Name, {order_create, MessageRec}).
+  gen_fsm:sync_send_event(Name,
+    #seto_payload{
+      eto_payload=#eto_payload{},
+      type=order_create,
+      order_create=#seto_order_create{
+        type=limit,
+        market=Mkt, contract=C, side=Side,
+        quantity_type=payoff_currency,
+        quantity=Qty, display_quantity=Qty,
+        price_type=percent_odds,
+        price=Px
+      }}).
 
 order_cancel(Name, Order) ->
-  MessageRec = #seto_order_cancel{order=Order},
-  gen_fsm:sync_send_event(Name, {order_cancel, MessageRec}).
+  gen_fsm:sync_send_event(Name,
+    #seto_payload{
+      eto_payload=#eto_payload{},
+      type=order_cancel,
+      order_cancel=#seto_order_cancel{
+        order=Order
+      }}).
 
 subscribe(Name, Mkt) ->
-  MessageRec = #seto_market_subscription{market=Mkt},
-  gen_fsm:sync_send_event(Name, {market_subscription, MessageRec}).
+  gen_fsm:sync_send_event(Name,
+    #seto_payload{
+      eto_payload=#eto_payload{},
+      type=market_subscription,
+      market_subscription=#seto_market_subscription{
+        market=Mkt
+      }}).
 
 unsubscribe(Name, Mkt) ->
-  MessageRec = #seto_market_unsubscription{market=Mkt},
-  gen_fsm:sync_send_event(Name, {market_unsubscription, MessageRec}).
+  gen_fsm:sync_send_event(Name,
+    #seto_payload{
+      eto_payload=#eto_payload{},
+      type=market_unsubscription,
+      market_unsubscription=#seto_market_unsubscription{
+        market=Mkt
+      }}).
 
 market_quotes_request(Name, Mkt) ->
-  MessageRec = #seto_market_quotes_request{market=Mkt},
-  gen_fsm:sync_send_event(Name, {market_quotes_request, MessageRec}).
+  gen_fsm:sync_send_event(Name,
+    #seto_payload{
+      eto_payload=#eto_payload{},
+      type=market_quotes_request,
+      market_quotes_request=#seto_market_quotes_request{
+        market=Mkt
+      }}).
 
-message(Name, Message) ->
-  gen_fsm:sync_send_event(Name, Message).
+payload(Name, Payload) ->
+  gen_fsm:sync_send_event(Name, Payload).
 
 
 %% ------------------------------------------------------------------
@@ -128,10 +162,15 @@ handle_sync_event(_Event, _From, StateName, State) ->
 
 handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Name} = State) ->
   Login = #seto_payload{
-    eto_payload=#eto_payload{
-      type=login,
-      login=#eto_login{session_id=Session}
-    },
+    eto_payload=
+        case Session of
+          undefined -> #eto_payload{};
+          _ ->
+            #eto_payload{
+              type=login,
+              login=#eto_login{session_id=Session}
+            }
+        end,
     type=login,
     login=#seto_login{
       username=proplists:get_value(username, Opts),
@@ -146,7 +185,9 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
   {next_state, StateName, NewState};
 
 handle_info({heartbeat_timeout, Seq}, StateName, #s{out=Seq} = State0) ->
-  {_, State} = send_call(heartbeat, State0#s{heartbeat_ref=undefined}),
+  {_, State} = send_call(
+    #seto_payload{type=eto,eto_payload=#eto_payload{type=heartbeat}},
+    State0#s{heartbeat_ref=undefined}),
   {next_state, StateName, State};
 handle_info({heartbeat_timeout, _}, StateName, State) ->
   {next_state, StateName, State};
@@ -158,7 +199,7 @@ handle_info({tcp, Sock, Data}, StateName, #s{buf=Buf} = State) ->
   {NewStateName, NewState} =
     lists:foldl(
       fun(PayloadData, {AccStateName, AccState}) ->
-        handle_payload(seto_piqi:parse_payload(PayloadData), AccStateName, AccState)
+        handle_eto(seto_piqi:parse_payload(PayloadData), AccStateName, AccState)
       end,
       {StateName, State}, Payloads),
   {next_state, NewStateName, NewState#s{buf=NewBuf}};
@@ -198,11 +239,11 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 %% sync
 
-awaiting_session(_Message, _From, State0) ->
+awaiting_session(_Payload, _From, State0) ->
   {reply, {error, no_session}, awaiting_session, State0}.
 
-logged_in(Message, _From, State0) ->
-  {Reply, State} = send_call(Message, State0),
+logged_in(Payload, _From, State0) ->
+  {Reply, State} = send_call(Payload, State0),
   {reply, Reply, logged_in, State}.
 
 logging_out(_Message, _From, State0) ->
@@ -225,40 +266,35 @@ logging_out(stop, State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-handle_payload({sequenced, Sequenced}, StateName, State) ->
-  handle_sequenced(Sequenced, StateName, State);
-handle_payload(Transient, StateName, #s{callback=Callback, session=Session} = State) ->
-  ok = Callback(Transient, Session),
-  {StateName, State}.
 
-handle_sequenced(#seto_payload{eto_payload=#eto_payload{seq=Seq, type=replay}} = Payload, StateName,
+handle_eto(#seto_payload{eto_payload=#eto_payload{seq=Seq, type=replay}} = Payload, StateName,
                  #s{in=InSeq} = State) when Seq > InSeq ->
-  handle_message(Payload, StateName, State);
-handle_sequenced(#seto_payload{eto_payload=#eto_payload{seq=Seq}}=Payload, StateName, #s{in=InSeq} = State) when Seq > InSeq ->
-  {NewStateName, State0} = login_message(Payload, StateName, State),
-  lager:info("~p: Received {sequenced, ~p}~n", [StateName, Payload]),
+  handle_payload(Payload, StateName, State);
+handle_eto(#seto_payload{eto_payload=#eto_payload{seq=Seq}}=Payload, StateName, #s{in=InSeq} = State) when Seq > InSeq ->
+  {NewStateName, State0} = login_payload(Payload, StateName, State),
+  lager:info("~p: Received ~p~n", [StateName, Payload]),
   {ok, NewState} = send_call(#seto_payload{type=eto, eto_payload=#eto_payload{type=replay, replay=#eto_replay{seq=InSeq}}}, State0),
   {NewStateName, NewState};
 
-handle_sequenced(#seto_payload{eto_payload=#eto_payload{seq=Seq, logout=#eto_logout{reason=Reason}}}, _StateName,
+handle_eto(#seto_payload{eto_payload=#eto_payload{seq=Seq, logout=#eto_logout{reason=Reason}}}, _StateName,
                  #s{in=Seq, cache=Cache, name=Name} = State) ->
   Cache:log_in(Name, Seq),
   {logging_out, State#s{logout_reason=Reason, in=Seq+1}};
-handle_sequenced(#seto_payload{eto_payload=#eto_payload{seq=Seq, type=heartbeat}}, StateName,
+handle_eto(#seto_payload{eto_payload=#eto_payload{seq=Seq, type=heartbeat}}, StateName,
                  #s{in=Seq, cache=Cache, name=Name} = State) ->
   Cache:log_in(Name, Seq),
   {StateName, State#s{in=Seq+1}};
-handle_sequenced(#seto_payload{eto_payload=#eto_payload{seq=Seq}} = Payload, StateName,
+handle_eto(#seto_payload{eto_payload=#eto_payload{seq=Seq}} = Payload, StateName,
                  #s{in=Seq, name=Name, session=Session, callback=Callback, cache=Cache} = State) ->
-  lager:info("~p: Received {sequenced, ~p}~n", [StateName, Payload]),
-  {NewStateName, NewState} = handle_message(Payload, StateName, State#s{in=Seq+1}),
+  lager:info("~p: Received ~p~n", [StateName, Payload]),
+  {NewStateName, NewState} = handle_payload(Payload, StateName, State#s{in=Seq+1}),
   Cache:log_in(Name, Seq),
   ok = Callback(Payload, Session),
   {NewStateName, NewState};
-handle_sequenced(_, StateName, State) ->
+handle_eto(_, StateName, State) ->
   {StateName, State}.
 
-handle_message(#seto_payload{eto_payload=#eto_payload{replay=#eto_replay{seq=Seq}}},
+handle_payload(#seto_payload{eto_payload=#eto_payload{replay=#eto_replay{seq=Seq}}},
     StateName, #s{name=Name, sock=Sock, cache=Cache} = State) ->
   Cache:map_from(Name, Seq,
     fun(Payload) ->
@@ -266,13 +302,13 @@ handle_message(#seto_payload{eto_payload=#eto_payload{replay=#eto_replay{seq=Seq
     end),
   {StateName, State};
 
-handle_message(#seto_payload{eto_payload=#eto_payload{type=login_response}} = Message, StateName, State) ->
-  login_message(Message, StateName, State);
+handle_payload(#seto_payload{eto_payload=#eto_payload{type=login_response}} = Message, StateName, State) ->
+  login_payload(Message, StateName, State);
 
-handle_message(_Message, StateName, State) ->
+handle_payload(_Message, StateName, State) ->
   {StateName, State}.
 
-login_message(
+login_payload(
   #seto_payload{
     eto_payload=#eto_payload{
       login_response=#eto_login_response{
@@ -282,7 +318,7 @@ login_message(
   #s{name=Name, cache=Cache} = State,
   Cache:takeover_session(Name, Session),
   {logged_in, State#s{session=Session, out=Reset}};
-login_message(_, StateName, State) ->
+login_payload(_, StateName, State) ->
   {StateName, State}.
 
 send_call(#seto_payload{eto_payload=Eto}=Payload0, #s{name=Name, out=Seq, sock=Sock, cache=Cache, heartbeat_ref=Ref} = State) ->
