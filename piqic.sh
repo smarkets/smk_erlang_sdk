@@ -4,7 +4,7 @@ SMK_API_COMMON=deps/smk_api_common/
 ETO_COMMON=deps/eto_common/
 if [ ! -d "$SMK_API_COMMON" ]; then
   SMK_API_COMMON=../smk_api_common/
-  SMK_API_COMMON=../smk_api_common/
+  ETO_COMMON=../eto_common/
 fi
 
 API_HOME="$PWD"
