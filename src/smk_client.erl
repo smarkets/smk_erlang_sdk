@@ -168,7 +168,7 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
           _ ->
             #eto_payload{
               type=login,
-              login=#eto_login{session_id=Session}
+              login=#eto_login{session=Session}
             }
         end,
     type=login,
@@ -312,7 +312,7 @@ login_payload(
   #seto_payload{
     eto_payload=#eto_payload{
       login_response=#eto_login_response{
-        session_id=Session,
+        session=Session,
         reset=Reset
       }}}, _StateName, State) ->
   #s{name=Name, cache=Cache} = State,
