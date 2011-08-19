@@ -208,8 +208,9 @@ handle_info({tcp_closed, Sock}, logging_out, #s{logout_reason=undefined} = State
   lager:notice("logging_out: tcp_closed logout_reason=undefined ~p", [Sock]),
   {stop, normal, State};
 
-handle_info({tcp_closed, Sock}, logging_out, #s{logout_reason=comfirmation} = State) ->
-  lager:notice("logging_out: tcp_closed logout_reason=comfirmation ~p", [Sock]),
+handle_info({tcp_closed, Sock}, logging_out, #s{logout_reason=Reason} = State)
+    when Reason =:= confirmation; Reason =:= login_timeout; Reason =:= login_not_first_seq ->
+  lager:notice("logging_out: tcp_closed stopping due to logout_reason=~p ~p", [Reason, Sock]),
   {stop, normal, State};
 
 handle_info({tcp_closed, Sock}, logging_out, #s{logout_reason=Reason} = State) ->
