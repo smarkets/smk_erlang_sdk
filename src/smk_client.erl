@@ -164,7 +164,7 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
   Login = #seto_payload{
     eto_payload=
         case Session of
-          undefined -> #eto_payload{};
+          undefined -> #eto_payload{type=login};
           _ ->
             #eto_payload{
               type=login,
