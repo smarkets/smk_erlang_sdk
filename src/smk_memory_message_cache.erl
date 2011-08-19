@@ -121,15 +121,15 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-do_log(ClientName, #seto_sequenced{seq=Out, message=Message} = Payload, #s{cache=Cache} = State) ->
+do_log(ClientName, #seto_payload{eto_payload=#eto_payload{seq=Out}} = Payload, #s{cache=Cache} = State) ->
   State#s{cache =
     case gb_trees:lookup(ClientName, Cache) of
       none ->
         gb_trees:enter(ClientName, {undefined,now(),1,Out,queue:from_list([Payload])}, Cache);
       {value, {Session,T,In,_,Q}} ->
         NewT =
-          case Message of
-            {login,_} -> now();
+          case Payload of
+            #seto_payload{type=login} -> now();
             _ -> T
           end,
         gb_trees:update(ClientName,
@@ -147,7 +147,7 @@ do_map_from(ClientName, FromSeq, Fun, Cache) ->
     none -> {error, empty_cache};
     {value, {_Session,_T,_In,_Out,Q}} ->
       lists:foldl(fun
-        (#seto_sequenced{seq=Seq} = Payload, Seq) ->
+        (#seto_payload{eto_payload=#eto_payload{seq=Seq}} = Payload, Seq) ->
           Fun(Payload),
           Seq+1; 
         (_, NextSeq) ->

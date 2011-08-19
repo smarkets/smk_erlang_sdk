@@ -27,21 +27,26 @@ An example client is available in src/smk_example_client.erl - to start it up si
                      {seto_login_response_payload,
                          <<"0074c6ac-8954-44db-aee0-72ecb5fd7dd0">>}},
                  false}
-    2> smk_client:order(smk_my_callbacks, 400000, <<"25">>, buy, <<"000000000000000000000001dc91c024">>, <<"000000000000000000000002ab9acccc">>).
+    2> rr(seto_piqi).
+    [...]
+    3> smk_client:order(smk_my_callbacks, 400000, 25, buy, #seto_uuid_128{low=122001}, #seto_uuid_128{low=175002}).
     ok
-    Received {seto_message,2,
-                 {order_accepted,
-                     {seto_order_accepted_payload,
-                         <<"b343e1d8-1427-46fa-b1e0-06542b5ab2da">>,
-                         <<"000000000000010980d9111efe41fff0">>}},
-                 false}  
-    3> smk_client:order_cancel(smk_my_callbacks, <<"000000000000010980d9111efe41fff0">>).
+    Received {seto_payload,order_accepted,
+                        {eto_payload,2,undefined,false,undefined,undefined,
+                            undefined,undefined},
+                        undefined,undefined,undefined,
+                        {seto_order_accepted,2,
+                            {seto_uuid_128,74302962988791779,0}}...}
+    4> smk_client:order_cancel(smk_my_callbacks, #seto_uuid_128{low=74302962988791779}).
     ok
-    Received {seto_message,3,
-                 {order_cancelled,
-                     {seto_order_cancelled_payload,
-                         <<"000000000000010980d9111efe41fff0">>}},
-                 false}
-    4> smk_client:subscribe(smk_my_callbacks, <<"000000000000000000000001dc91c024">>).
+    Received {seto_payload,order_cancelled,
+                        {eto_payload,3,undefined,false,undefined,undefined,
+                            undefined,undefined},
+                        undefined,undefined,undefined,undefined,undefined,
+                        undefined,
+                        {seto_order_cancelled,
+                            {seto_uuid_128,74302962988791779,0},
+                            member_requested}...}
+    5> smk_client:subscribe(smk_my_callbacks, #seto_uuid_128{low=122001}).
 
 As you can see from the above example the actual calls return ok, this means that the message was sent to Smarkets, the response is asyncronously sent back from Smarkets and is just printed out. By being asyncronous it is possible to make more than one order before receiving the confirmation from the first.
