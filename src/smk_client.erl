@@ -192,6 +192,8 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
   {ok, NewState} = send_call(Login, State#s{sock=Sock}),
   {next_state, StateName, NewState};
 
+handle_info({heartbeat_timeout, _}, awaiting_session = StateName, State) ->
+  {next_state, StateName, State#s{heartbeat_ref=undefined}};
 handle_info({heartbeat_timeout, Seq}, StateName, #s{out=Seq} = State0) ->
   {_, State} = send_call(
     #seto_payload{type=eto,eto_payload=#eto_payload{type=heartbeat}},
@@ -324,9 +326,9 @@ login_payload(
         session=Session,
         reset=Reset
       }}}, _StateName, State) ->
-  #s{name=Name, cache=Cache} = State,
+  #s{name=Name, cache=Cache, heartbeat_ref=Heartbeat} = State,
   Cache:takeover_session(Name, Session),
-  {logged_in, State#s{session=Session, out=Reset}};
+  {logged_in, State#s{session=Session, out=Reset, heartbeat_ref=heartbeat_timer(Heartbeat, Reset)}};
 login_payload(_, StateName, State) ->
   {StateName, State}.
 
