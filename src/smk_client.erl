@@ -21,7 +21,7 @@
 -record(s, {
     sock,
     heartbeat_ref :: reference(),
-    buf = eto_frame:buf(),
+    buf = smk_eto_frame:buf(),
     out :: pos_integer(),
     in :: pos_integer(),
     cache :: atom(),
@@ -203,7 +203,7 @@ handle_info({heartbeat_timeout, _}, StateName, State) ->
 
 handle_info({tcp, Sock, Data}, StateName, #s{buf=Buf} = State) ->
   inet:setopts(Sock, [{active,once}]),
-  Buf1 = eto_frame:buf_append(Buf, Data),
+  Buf1 = smk_eto_frame:buf_append(Buf, Data),
   {NewBuf, Payloads} = deframe_all(Buf1, []),
   {NewStateName, NewState} =
     lists:foldl(
@@ -360,7 +360,7 @@ gapfill(Seq) ->
   #seto_payload{type=eto, eto_payload=#eto_payload{type=gapfill, is_replay=true, seq=Seq}}.
 
 deframe_all(Buf, Acc) ->
-    case eto_frame:deframe(Buf) of
+    case smk_eto_frame:deframe(Buf) of
         {PayloadData, Buf1} ->
             deframe_all(Buf1, [PayloadData|Acc]);
         Buf1 -> {Buf1, lists:reverse(Acc)}
