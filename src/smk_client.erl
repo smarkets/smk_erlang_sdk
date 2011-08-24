@@ -347,7 +347,7 @@ send_call(#seto_payload{eto_payload=Eto}=Payload0, #s{name=Name, out=Seq, sock=S
   end.
 
 sock_send(Sock, Payload) ->
-  gen_tcp:send(Sock, eto_frame:frame(seto_piqi:gen_payload(Payload))).
+  gen_tcp:send(Sock, smk_eto_frame:frame(seto_piqi:gen_payload(Payload))).
 
 replay_payload(#seto_payload{eto_payload=#eto_payload{type=replay, seq=Seq}}) ->
   gapfill(Seq);
