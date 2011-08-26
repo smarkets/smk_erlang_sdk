@@ -13,7 +13,17 @@ recv() ->
       login_response=#eto_login_response{}
     }
   }).
-
+-define(loginResponse(Seq, Session), 
+  #seto_payload{
+    eto_payload=#eto_payload{
+      seq=Seq,
+      type=login_response,
+      is_replay=false,
+      login_response=#eto_login_response{
+        session=Session
+      }
+    }
+  }).
 -define(assertRecv(Payload),
   Payload = recv()).
 
@@ -25,6 +35,9 @@ recv() ->
 
 -define(assertLoginResponse(Seq),
   ?assertRecv(?loginResponse(Seq))).
+
+-define(assertLoginResponse(Seq, Session),
+  ?assertRecv(?loginResponse(Seq, Session))).
 
 -define(assertPong(Seq),
   ?assertEto(#eto_payload{
@@ -40,5 +53,29 @@ recv() ->
         logout=#eto_logout{
           reason=confirmation
         }
+      }
+    })).
+
+-define(assertOrderAccepted(Seq, OrderId, ResponseSeq),
+  ?assertRecv(#seto_payload{
+      type=order_accepted,
+      order_accepted=#seto_order_accepted{
+        order=OrderId,
+        seq=ResponseSeq
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
+      }
+    })).
+
+-define(assertOrderCancelled(Seq, OrderId, Reason),
+  ?assertRecv(#seto_payload{
+      type=order_cancelled,
+      order_cancelled=#seto_order_cancelled{
+        order=OrderId,
+        reason=Reason
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
       }
     })).
