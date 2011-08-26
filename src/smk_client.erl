@@ -27,6 +27,10 @@
   | {password, binary()}
   | {callback, fun()}.
 -type opts() :: list(opt()).
+-type send_response() :: 
+    {ok, eto_seq()}
+  | {error, inet:posix()}.
+
 
 -record(s, {
     sock :: socket(),
@@ -74,7 +78,7 @@ start_link(Cache, Opts) ->
 start_link(Cache, Name, Opts) ->
   gen_fsm:start_link(Name, ?MODULE, [Cache,Opts], []).
 
--spec logout(name()) -> ok.
+-spec logout(name()) -> send_response().
 logout(Name) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
@@ -89,7 +93,7 @@ logout(Name) ->
 stop(Name) ->
   gen_fsm:send_event(Name, stop).
 
--spec ping(name()) -> ok.
+-spec ping(name()) -> send_response().
 ping(Name) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
@@ -101,7 +105,7 @@ ping(Name) ->
   name(),
   non_neg_integer(), non_neg_integer(), seto_side(),
   seto_market(), seto_contract()
-) -> ok.
+) -> send_response().
 order(Name, Qty, Px, Side, Mkt, C) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
@@ -116,7 +120,7 @@ order(Name, Qty, Px, Side, Mkt, C) ->
         price=Px
       }}).
 
--spec order_cancel(name(), seto_order()) -> ok.
+-spec order_cancel(name(), seto_order()) -> send_response().
 order_cancel(Name, Order) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
@@ -126,7 +130,7 @@ order_cancel(Name, Order) ->
         order=Order
       }}).
 
--spec subscribe(name(), seto_market()) -> ok.
+-spec subscribe(name(), seto_market()) -> send_response().
 subscribe(Name, Mkt) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
@@ -136,7 +140,7 @@ subscribe(Name, Mkt) ->
         market=Mkt
       }}).
 
--spec unsubscribe(name(), seto_market()) -> ok.
+-spec unsubscribe(name(), seto_market()) -> send_response().
 unsubscribe(Name, Mkt) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
@@ -146,7 +150,7 @@ unsubscribe(Name, Mkt) ->
         market=Mkt
       }}).
 
--spec market_quotes_request(name(), seto_market()) -> ok.
+-spec market_quotes_request(name(), seto_market()) -> send_response().
 market_quotes_request(Name, Mkt) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
@@ -156,7 +160,7 @@ market_quotes_request(Name, Mkt) ->
         market=Mkt
       }}).
 
--spec payload(name(), seto_payload()) -> ok.
+-spec payload(name(), seto_payload()) -> send_response().
 payload(Name, Payload) ->
   gen_fsm:sync_send_event(Name, Payload).
 
@@ -241,13 +245,13 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
     end,
   Cache:connecting(Name),
   {ok, Sock} = gen_tcp:connect(Host, Port, ?SOCK_OPTS),
-  {ok, NewState} = send_call(Login, State#s{sock=Sock}),
+  {ok, _, NewState} = send_call(Login, State#s{sock=Sock}),
   {next_state, StateName, NewState};
 
 handle_info({heartbeat_timeout, _}, awaiting_session = StateName, State) ->
   {next_state, StateName, State#s{heartbeat_ref=undefined}};
 handle_info({heartbeat_timeout, Seq}, StateName, #s{out=Seq} = State0) ->
-  {_, State} = send_call(
+  {ok, _, State} = send_call(
     #seto_payload{type=eto,eto_payload=#eto_payload{type=heartbeat}},
     State0#s{heartbeat_ref=undefined}),
   {next_state, StateName, State};
@@ -306,10 +310,14 @@ awaiting_session(_Payload, _From, State0) ->
   {reply, {error, no_session}, awaiting_session, State0}.
 
 -spec logged_in(seto_payload(), from(), #s{}) ->
-  {reply, ok, logged_in, #s{}}.
+  {reply, send_response(), logged_in, #s{}}.
 logged_in(Payload, _From, State0) ->
-  {Reply, State} = send_call(Payload, State0),
-  {reply, Reply, logged_in, State}.
+  case send_call(Payload, State0) of
+    {ok, Seq, State} ->
+      {reply, {ok, Seq}, logged_in, State};
+    {Error, State} ->
+      {reply, Error, logged_in, State}
+  end.
 
 logging_out(_Message, _From, State0) ->
   {reply, {error, logging_out}, logging_out, State0}.
@@ -320,7 +328,7 @@ awaiting_session(stop, State) ->
   {next_state, awaiting_session, State}.
 
 logged_in(stop, State0) ->
-  {ok, State} = send_call(
+  {ok, _, State} = send_call(
     #seto_payload{type=eto, eto_payload=#eto_payload{type=logout,logout=#eto_logout{reason=none}}},
     State0),
   {next_state, logged_in, State}.
@@ -353,7 +361,7 @@ handle_eto(#seto_payload{
       type=replay,
       replay=#eto_replay{seq=InSeq}
     }},
-  {ok, NewState} = send_call(ReplayPayload, State0),
+  {ok, _, NewState} = send_call(ReplayPayload, State0),
   {NewStateName, NewState};
 
 handle_eto(#seto_payload{
@@ -431,7 +439,7 @@ login_payload(_, StateName, State) ->
   {StateName, State}.
 
 -spec send_call(seto_payload(), #s{}) ->
-  {ok, #s{}} | {{error, gen_tcp:posix()}, #s{}}.
+  {ok, eto_seq(), #s{}} | {{error, gen_tcp:posix()}, #s{}}.
 send_call(#seto_payload{eto_payload=Eto}=Payload0, State) ->
   #s{
     name=Name,
@@ -449,7 +457,7 @@ send_call(#seto_payload{eto_payload=Eto}=Payload0, State) ->
     ok ->
       Cache:log_out(Name, Payload),
       Out = Seq+1,
-      {ok, State#s{out=Out, heartbeat_ref=heartbeat_timer(Ref, Out)}};
+      {ok, Seq, State#s{out=Out, heartbeat_ref=heartbeat_timer(Ref, Out)}};
     Error ->
       {Error, State}
   end.

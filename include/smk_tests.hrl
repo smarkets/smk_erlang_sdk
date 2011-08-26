@@ -1,29 +1,69 @@
+-include("eto_piqi.hrl").
+-include("seto_piqi.hrl").
+
 recv() ->
   receive
     Any -> Any
   end.
 
+-spec all(list(any()), function()) -> ok.
+all([], _) -> ok;
+all(L, F)  -> all(L, F, recv(), []).
 
--define(LOGIN_RESPONSE(Seq), 
+-spec all(list(any()), function(), seto_payload(), list(any())) -> ok.
+all([], F, Recv, [H|_]) ->
+  F(H, Recv); % none left, definitely not one of these
+all([H|T], F, Recv, Acc) ->
+  try
+    F(H, Recv),
+    all(T, F)
+  catch
+    error:{badmatch,Recv} ->
+      all(T, F, Recv, [H|Acc])
+  end.
+
+-define(assertSeq(Seq),  ?assertEto(#eto_payload{seq=Seq})).
+
+-define(loginResponse(Seq), 
   #seto_payload{
     eto_payload=#eto_payload{
-      seq=1,
+      seq=Seq,
       type=login_response,
       is_replay=false,
       login_response=#eto_login_response{}
     }
   }).
-
+-define(loginResponse(Seq, Session), 
+  #seto_payload{
+    eto_payload=#eto_payload{
+      seq=Seq,
+      type=login_response,
+      is_replay=false,
+      login_response=#eto_login_response{
+        session=Session
+      }
+    }
+  }).
 -define(assertRecv(Payload),
   Payload = recv()).
 
 -define(assertEto(Eto),
   ?assertRecv(#seto_payload{
-    eto_payload=Eto
-  })).
+      type=eto,
+      eto_payload=Eto
+    })).
 
 -define(assertLoginResponse(Seq),
-  ?assertRecv(?LOGIN_RESPONSE(Seq))).
+  ?assertRecv(?loginResponse(Seq))).
+
+-define(assertLoginResponse(Seq, Session),
+  ?assertRecv(?loginResponse(Seq, Session))).
+
+-define(assertPong(Seq),
+  ?assertEto(#eto_payload{
+      type=pong,
+      seq=Seq
+    })).
 
 -define(assertLogoutConfirmation(Seq),
   ?assertRecv(#seto_payload{
@@ -33,5 +73,67 @@ recv() ->
         logout=#eto_logout{
           reason=confirmation
         }
+      }
+    })).
+
+-define(assertOrderAccepted(Seq, Order, ResponseSeq),
+  ?assertRecv(#seto_payload{
+      type=order_accepted,
+      order_accepted=#seto_order_accepted{
+        order=Order,
+        seq=ResponseSeq
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
+      }
+    })).
+
+-define(assertOrderCancelled(Seq, Order, Reason),
+  ?assertRecv(?orderCancelled(Seq, Order, Reason))).
+
+-define(orderCancelled(Seq, Order, Reason),
+  #seto_payload{
+    type=order_cancelled,
+    order_cancelled=#seto_order_cancelled{
+      order=Order,
+      reason=Reason
+    },
+    eto_payload=#eto_payload{
+      seq=Seq
+    }
+  }).
+
+
+-define(assertOrderExecuted(Seq, Order, Qty, Px),
+  ?assertRecv(#seto_payload{
+      type=order_executed,
+      order_executed=#seto_order_executed{
+        order=Order,
+        quantity=Qty,
+        price=Px
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
+      }
+    })).
+
+-define(assertContractQuotes(Seq, Contract),
+  ?assertRecv(#seto_payload{
+      type=contract_quotes,
+      contract_quotes=#seto_contract_quotes{
+        contract=Contract
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
+      }
+    })).
+-define(assertMarketQuotes(Seq, Market),
+  ?assertRecv(#seto_payload{
+      type=market_quotes,
+      market_quotes=#seto_market_quotes{
+        market=Market
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
       }
     })).
