@@ -4,10 +4,10 @@ recv() ->
   end.
 
 
--define(LOGIN_RESPONSE(Seq), 
+-define(loginResponse(Seq), 
   #seto_payload{
     eto_payload=#eto_payload{
-      seq=1,
+      seq=Seq,
       type=login_response,
       is_replay=false,
       login_response=#eto_login_response{}
@@ -19,11 +19,18 @@ recv() ->
 
 -define(assertEto(Eto),
   ?assertRecv(#seto_payload{
-    eto_payload=Eto
-  })).
+      type=eto,
+      eto_payload=Eto
+    })).
 
 -define(assertLoginResponse(Seq),
-  ?assertRecv(?LOGIN_RESPONSE(Seq))).
+  ?assertRecv(?loginResponse(Seq))).
+
+-define(assertPong(Seq),
+  ?assertEto(#eto_payload{
+      type=pong,
+      seq=Seq
+    })).
 
 -define(assertLogoutConfirmation(Seq),
   ?assertRecv(#seto_payload{
