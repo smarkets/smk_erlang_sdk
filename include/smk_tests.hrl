@@ -1,6 +1,25 @@
+-include("eto_piqi.hrl").
+-include("seto_piqi.hrl").
+
 recv() ->
   receive
     Any -> Any
+  end.
+
+-spec all(list(any()), function()) -> ok.
+all([], _) -> ok;
+all(L, F)  -> all(L, F, recv(), []).
+
+-spec all(list(any()), function(), seto_payload(), list(any())) -> ok.
+all([], F, Recv, [H|_]) ->
+  F(H, Recv); % none left, definitely not one of these
+all([H|T], F, Recv, Acc) ->
+  try
+    F(H, Recv),
+    all(T, F)
+  catch
+    error:{badmatch,Recv} ->
+      all(T, F, Recv, [H|Acc])
   end.
 
 -define(assertSeq(Seq),  ?assertEto(#eto_payload{seq=Seq})).
@@ -70,11 +89,28 @@ recv() ->
     })).
 
 -define(assertOrderCancelled(Seq, Order, Reason),
+  ?assertRecv(?orderCancelled(Seq, Order, Reason))).
+
+-define(orderCancelled(Seq, Order, Reason),
+  #seto_payload{
+    type=order_cancelled,
+    order_cancelled=#seto_order_cancelled{
+      order=Order,
+      reason=Reason
+    },
+    eto_payload=#eto_payload{
+      seq=Seq
+    }
+  }).
+
+
+-define(assertOrderExecuted(Seq, Order, Qty, Px),
   ?assertRecv(#seto_payload{
-      type=order_cancelled,
-      order_cancelled=#seto_order_cancelled{
+      type=order_executed,
+      order_executed=#seto_order_executed{
         order=Order,
-        reason=Reason
+        quantity=Qty,
+        price=Px
       },
       eto_payload=#eto_payload{
         seq=Seq
