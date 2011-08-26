@@ -22,11 +22,13 @@ An example client is available in src/smk_example_client.erl - to start it up si
     {ok, <0.34.0>}
     1> smk_my_callbacks:start(<<"name@email.com">>,<<"password">>).
     {ok, <0.38.0>}
-    Received {seto_message,1,
-                 {login_response,
-                     {seto_login_response_payload,
-                         <<"0074c6ac-8954-44db-aee0-72ecb5fd7dd0">>}},
-                 false}
+    Received {seto_payload,eto,
+                       {eto_payload,1,login_response,false,undefined,
+                           undefined,
+                           {eto_login_response,
+                               <<"446d0756-3ef5-4a5a-a146-e1c4c6167c56">>,
+                               2},
+                           undefined} ... }
     2> rr(seto_piqi).
     [...]
     3> smk_client:order(smk_my_callbacks, 400000, 25, buy, #seto_uuid_128{low=122001}, #seto_uuid_128{low=175002}).
