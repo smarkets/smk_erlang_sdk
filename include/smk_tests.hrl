@@ -3,6 +3,7 @@ recv() ->
     Any -> Any
   end.
 
+-define(assertSeq(Seq),  ?assertEto(#eto_payload{seq=Seq})).
 
 -define(loginResponse(Seq), 
   #seto_payload{
@@ -56,11 +57,11 @@ recv() ->
       }
     })).
 
--define(assertOrderAccepted(Seq, OrderId, ResponseSeq),
+-define(assertOrderAccepted(Seq, Order, ResponseSeq),
   ?assertRecv(#seto_payload{
       type=order_accepted,
       order_accepted=#seto_order_accepted{
-        order=OrderId,
+        order=Order,
         seq=ResponseSeq
       },
       eto_payload=#eto_payload{
@@ -68,12 +69,33 @@ recv() ->
       }
     })).
 
--define(assertOrderCancelled(Seq, OrderId, Reason),
+-define(assertOrderCancelled(Seq, Order, Reason),
   ?assertRecv(#seto_payload{
       type=order_cancelled,
       order_cancelled=#seto_order_cancelled{
-        order=OrderId,
+        order=Order,
         reason=Reason
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
+      }
+    })).
+
+-define(assertContractQuotes(Seq, Contract),
+  ?assertRecv(#seto_payload{
+      type=contract_quotes,
+      contract_quotes=#seto_contract_quotes{
+        contract=Contract
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
+      }
+    })).
+-define(assertMarketQuotes(Seq, Market),
+  ?assertRecv(#seto_payload{
+      type=market_quotes,
+      market_quotes=#seto_market_quotes{
+        market=Market
       },
       eto_payload=#eto_payload{
         seq=Seq
