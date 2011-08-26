@@ -18,7 +18,7 @@ login_test_() -> ?setup(
     fun() ->
         {ok, C} = login(),
         ?assertLoginResponse(1),
-        ok = smk_client:logout(C),
+        {ok, 2} = smk_client:logout(C),
         ?assertLogoutConfirmation(2)
     end
   ).
@@ -27,14 +27,17 @@ ping_test() ->
   {ok, C} = login(),
   ?assertLoginResponse(1),
   lists:foreach(
-    fun(_) -> ok = smk_client:ping(C) end,
+    fun(I) ->
+      I1 = I + 1,
+      {ok, I1} = smk_client:ping(C)
+    end,
     lists:seq(1, 10)
   ),
   lists:foreach(
     fun(I) -> I1 = I+1, ?assertPong(I1) end,
     lists:seq(1, 10)
   ),
-  ok = smk_client:logout(C),
+  {ok, 12} = smk_client:logout(C),
   ?assertLogoutConfirmation(12).
 
 resume_test() ->
@@ -44,7 +47,7 @@ resume_test() ->
         ?assertLoginResponse(1, Session),
         exit(whereis(Name), kill),
         ?assertLoginResponse(2, Session),
-        ok = smk_client:logout(Name),
+        {ok, 3} = smk_client:logout(Name),
         ?assertLogoutConfirmation(3)
     end}.
 
@@ -54,11 +57,11 @@ order_create_test() ->
   Qty = 100000,
   Px = 2500,
   Side = buy,
-  ok = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
+  {ok, 2} = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
   ?assertOrderAccepted(2, Order, 2),
-  ok = smk_client:order_cancel(C, Order),
+  {ok, 3} = smk_client:order_cancel(C, Order),
   ?assertOrderCancelled(3, Order, member_requested),
-  ok = smk_client:logout(C),
+  {ok, 4} = smk_client:logout(C),
   ?assertLogoutConfirmation(4).
 
 many_order_create_test() ->
@@ -69,7 +72,8 @@ many_order_create_test() ->
   Side = buy,
   lists:foreach(
     fun(I) ->
-      ok = smk_client:order(C, Qty, Px+(I*100), Side, ?MARKET_ID, ?CONTRACT_ID)
+      I1 = I + 1,
+      {ok, I1} = smk_client:order(C, Qty, Px+(I*100), Side, ?MARKET_ID, ?CONTRACT_ID)
     end,
     lists:seq(1, 10)
   ),
@@ -84,7 +88,7 @@ many_order_create_test() ->
     ),
   lists:foreach(
     fun(Order) ->
-      ok = smk_client:order_cancel(C, Order)
+      {ok, _} = smk_client:order_cancel(C, Order)
     end, Orders
   ),
 
@@ -93,26 +97,26 @@ many_order_create_test() ->
       ?orderCancelled(_, Order, member_requested) = Recv
     end
   ),
-  ok = smk_client:logout(C),
+  {ok, 22} = smk_client:logout(C),
   ?assertLogoutConfirmation(22).
 
 market_subscription_test() ->
   {ok, C} = login(),
   ?assertLoginResponse(1),
-  ok = smk_client:subscribe(C, ?MARKET_ID), 
+  {ok, 2} = smk_client:subscribe(C, ?MARKET_ID), 
   ?assertMarketQuotes(2, ?MARKET_ID),%, ContractQuotes),
   Qty = 100000,
   Px = 2500,
   Side = buy,
-  ok = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
+  {ok, 3} = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
   ?assertContractQuotes(3, ?CONTRACT_ID),
   
   ?assertOrderAccepted(4, Order, 3),
-  ok = smk_client:order_cancel(C, Order),
+  {ok, 4} = smk_client:order_cancel(C, Order),
   ?assertContractQuotes(5, ?CONTRACT_ID),
   ?assertOrderCancelled(6, Order, member_requested),
 
-  ok = smk_client:logout(C),
+  {ok, 5} = smk_client:logout(C),
   ?assertLogoutConfirmation(7).
 
 order_executed_test_() ->
@@ -123,20 +127,20 @@ order_executed_test_() ->
         {ok, C} = login_with_user(1),
         ?assertLoginResponse(1),
         Side = buy,
-        ok = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
+        {ok, 2} = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
         ?assertOrderAccepted(2, Order, 2),
         ?assertOrderExecuted(3, Order, Qty, Px),
-        ok = smk_client:logout(C),
+        {ok, 3} = smk_client:logout(C),
         ?assertLogoutConfirmation(4)
       end,
       fun() ->
         {ok, C} = login_with_user(2),
         ?assertLoginResponse(1),
         Side = sell,
-        ok = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
+        {ok, 2} = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
         ?assertOrderAccepted(2, Order, 2),
         ?assertOrderExecuted(3, Order, Qty, Px),
-        ok = smk_client:logout(C),
+        {ok, 3} = smk_client:logout(C),
         ?assertLogoutConfirmation(4)
       end
     ]}.
