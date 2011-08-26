@@ -260,7 +260,7 @@ handle_info({heartbeat_timeout, _}, StateName, State) ->
 
 handle_info({tcp, Sock, Data}, StateName, #s{buf=Buf} = State) ->
   inet:setopts(Sock, [{active,once}]),
-  Buf1 = smk_eto_frame:buf_append(Buf, Data),
+  Buf1 = eto_frame:buf_append(Buf, Data),
   {NewBuf, Payloads} = deframe_all(Buf1, []),
   {NewStateName, NewState} =
     lists:foldl(
@@ -464,7 +464,7 @@ send_call(#seto_payload{eto_payload=Eto}=Payload0, State) ->
 
 -spec sock_send(socket(), seto_payload()) -> ok | {error, gen_tcp:posix()}.
 sock_send(Sock, Payload) ->
-  gen_tcp:send(Sock, smk_eto_frame:frame(seto_piqi:gen_payload(Payload))).
+  gen_tcp:send(Sock, eto_frame:frame(seto_piqi:gen_payload(Payload))).
 
 -spec replay_payload(seto_payload()) -> seto_payload().
 replay_payload(#seto_payload{eto_payload=#eto_payload{type=replay, seq=Seq}}) ->
@@ -487,7 +487,7 @@ gapfill(Seq) ->
 -spec deframe_all(eto_frame:buf(), list(binary())) ->
   {eto_frame:buf(), list(binary())}.
 deframe_all(Buf, Acc) ->
-    case smk_eto_frame:deframe(Buf) of
+    case eto_frame:deframe(Buf) of
         {PayloadData, Buf1} ->
             deframe_all(Buf1, [PayloadData|Acc]);
         Buf1 -> {Buf1, lists:reverse(Acc)}
