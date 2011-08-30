@@ -35,6 +35,7 @@
 -record(s, {
     sock :: socket(),
     heartbeat_ref :: timer:tref(),
+    drop_in = 0 :: pos_integer(),
     buf = eto_frame:buf(),
     out :: pos_integer(),
     in :: pos_integer(),
@@ -49,7 +50,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/2, start_link/3, stop/1]).
+-export([start_link/2, start_link/3, stop/1, drop_in/1]).
 
 %% send message
 -export([logout/1, ping/1, order/6, order_cancel/2]).
@@ -92,6 +93,10 @@ logout(Name) ->
 -spec stop(name()) -> ok.
 stop(Name) ->
   gen_fsm:send_event(Name, stop).
+
+-spec drop_in(name()) -> ok.
+drop_in(Name) ->
+  gen_fsm:send_event(Name, drop_in).
 
 -spec ping(name()) -> send_response().
 ping(Name) ->
@@ -264,8 +269,15 @@ handle_info({tcp, Sock, Data}, StateName, #s{buf=Buf} = State) ->
   {NewBuf, Payloads} = deframe_all(Buf1, []),
   {NewStateName, NewState} =
     lists:foldl(
-      fun(PayloadData, {AccStateName, AccState}) ->
-        handle_eto(seto_piqi:parse_payload(PayloadData), AccStateName, AccState)
+      fun
+        (PayloadData, {AccStateName, #s{drop_in=Drop} = AccState}) when Drop > 0 ->
+          #seto_payload{
+            eto_payload=#eto_payload{seq=Seq}
+          } = seto_piqi:parse_payload(PayloadData),
+          lager:log(warning, self(), "dropping incoming ~p", [Seq]),
+          {AccStateName, AccState#s{drop_in=Drop-1}};
+        (PayloadData, {AccStateName, AccState}) ->
+          handle_eto(seto_piqi:parse_payload(PayloadData), AccStateName, AccState)
       end,
       {StateName, State}, Payloads),
   {next_state, NewStateName, NewState#s{buf=NewBuf}};
@@ -327,6 +339,9 @@ logging_out(_Message, _From, State0) ->
 awaiting_session(stop, State) ->
   {next_state, awaiting_session, State}.
 
+logged_in(drop_in, #s{drop_in=Drop} = State) ->
+  {next_state, logged_in, State#s{drop_in=Drop+1}};
+
 logged_in(stop, State0) ->
   {ok, _, State} = send_call(
     #seto_payload{type=eto, eto_payload=#eto_payload{type=logout,logout=#eto_logout{reason=none}}},
@@ -354,7 +369,14 @@ handle_eto(#seto_payload{
       #s{in=InSeq} = State
     ) when Seq > InSeq ->
   {NewStateName, State0} = login_payload(Payload, StateName, State),
-  lager:info("~p: Received ~p~n", [StateName, Payload]),
+  case {StateName, NewStateName} of
+    {awaiting_session, logged_in} ->
+      #s{session=Session, callback=Callback} = State0,
+      ok = Callback(Payload, Session);
+    _ ->
+      ok
+  end,
+  lager:info("~p: Received out of sequence ~p~n", [StateName, Payload]),
   ReplayPayload = #seto_payload{
     type=eto,
     eto_payload=#eto_payload{

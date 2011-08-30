@@ -5,22 +5,21 @@
 
 -define(setup(F), {setup, fun setup/0, F}).
 -define(MARKET_ID, #seto_uuid_128{low=122001}).
--define(CONTRACT_ID, #seto_uuid_128{low=175002}).
+-define(CONTRACT_ID, #seto_uuid_128{low=175001}).
 
 setup() ->
   application:load(smk_erlang_sdk),
   application:set_env(smk_erlang_sdk, host, "vagrant-dev.corp.smarkets.com"),
-  %application:set_env(smk_erlang_sdk, restart_strategy, temporary),
   %application:start(lager),
   application:start(smk_erlang_sdk).
 
 login_test_() -> ?setup(
-    fun() ->
+    {timeout, 10, fun() ->
         {ok, C} = login(),
         ?assertLoginResponse(1),
         {ok, 2} = smk_client:logout(C),
         ?assertLogoutConfirmation(2)
-    end
+    end}
   ).
 
 ping_test() ->
@@ -28,8 +27,8 @@ ping_test() ->
   ?assertLoginResponse(1),
   lists:foreach(
     fun(I) ->
-      I1 = I + 1,
-      {ok, I1} = smk_client:ping(C)
+        I1 = I + 1,
+        {ok, I1} = smk_client:ping(C)
     end,
     lists:seq(1, 10)
   ),
@@ -40,7 +39,20 @@ ping_test() ->
   {ok, 12} = smk_client:logout(C),
   ?assertLogoutConfirmation(12).
 
-resume_test() ->
+ping_replay_test() ->
+  {ok, C} = login(),
+  ?assertLoginResponse(1),
+  ok = smk_client:drop_in(C),
+  {ok, 2} = smk_client:ping(C),
+  % in 3 dropped
+  {ok, 3} = smk_client:ping(C),
+  % out 5 replay
+  ?assertPong(2),
+  ?assertPong(3),
+  {ok, 5} = smk_client:logout(C),
+  ?assertLogoutConfirmation(4).
+
+resume_test_() ->
   {timeout, 15, fun() ->
         Name = resume_test,
         {ok, _} = login(Name),
@@ -49,6 +61,22 @@ resume_test() ->
         ?assertLoginResponse(2, Session),
         {ok, 3} = smk_client:logout(Name),
         ?assertLogoutConfirmation(3)
+    end}.
+
+ping_resume_replay_test_() ->
+  {timeout, 15, fun() ->
+        Name = ping_resume_replay_test,
+        {ok, _} = login(Name),
+        ?assertLoginResponse(1, Session),
+        smk_client:drop_in(Name),
+        {ok, 2} = smk_client:ping(Name),
+        exit(whereis(Name), kill),
+        ?assertLoginResponse(3, Session),
+        ?assertPongReplay(2),
+        ?assertGapfill(3),
+        % outgoing 4 is a replay
+        {ok, 5} = smk_client:logout(Name),
+        ?assertLogoutConfirmation(4)
     end}.
 
 order_create_test() ->
@@ -123,7 +151,7 @@ order_executed_test_() ->
   Qty = 50000,
   Px = 2500,
   {inparallel, [
-      fun() ->
+      {timeout, 20, fun() ->
         {ok, C} = login_with_user(1),
         ?assertLoginResponse(1),
         Side = buy,
@@ -132,8 +160,8 @@ order_executed_test_() ->
         ?assertOrderExecuted(3, Order, Qty, Px),
         {ok, 3} = smk_client:logout(C),
         ?assertLogoutConfirmation(4)
-      end,
-      fun() ->
+      end},
+    {timeout, 20, fun() ->
         {ok, C} = login_with_user(2),
         ?assertLoginResponse(1),
         Side = sell,
@@ -142,7 +170,7 @@ order_executed_test_() ->
         ?assertOrderExecuted(3, Order, Qty, Px),
         {ok, 3} = smk_client:logout(C),
         ?assertLogoutConfirmation(4)
-      end
+      end}
     ]}.
 
 cb(Pid, Payload, _Session) ->

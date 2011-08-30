@@ -65,6 +65,20 @@ all([H|T], F, Recv, Acc) ->
       seq=Seq
     })).
 
+-define(assertPongReplay(Seq),
+  ?assertEto(#eto_payload{
+      type=pong,
+      seq=Seq,
+      is_replay=true
+    })).
+
+-define(assertGapfill(Seq),
+  ?assertEto(#eto_payload{
+      type=gapfill,
+      seq=Seq,
+      is_replay=true
+    })).
+
 -define(assertLogoutConfirmation(Seq),
   ?assertRecv(#seto_payload{
       eto_payload=#eto_payload{
