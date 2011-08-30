@@ -30,7 +30,7 @@ from_int(I) ->
 
 from_uuid128(Uuid, Tag) ->
     I = to_int(Uuid),
-    <<(pad(to_hex(I), 28)):28/bytes, (pad(to_hex(tag(Tag)), 4)):4/bytes>>.
+    <<(pad(to_hex(I), 28)):28/bytes, (pad(to_hex(Tag), 4)):4/bytes>>.
 
 to_int(#seto_uuid_128{low = Low, high = High0}) ->
     High = case High0 of undefined -> 0; _ -> High0 end,
