@@ -24,7 +24,7 @@ start_link() ->
 
 init([]) ->
   Cache =
-    case application:get_env(smk_erlang_sdk, cache) of
+    case application:get_env(smk, cache) of
       {ok, C} -> C;
       _ ->
         smk_memory_message_cache

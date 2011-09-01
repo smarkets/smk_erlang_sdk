@@ -4,12 +4,11 @@
 -define(MAX_QUEUE, 20).
 
 -record(s, {
-    cache :: gb_tree()
+    cache :: gb_tree(),
+    pids :: gb_tree()
   }).
 
 -include("seto_piqi.hrl").
-% uncomment this line in your own application
-%-include_lib("smk_erlang_sdk/include/seto_piqi.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -48,7 +47,7 @@ session_state(ClientName) ->
   gen_server:call(?SERVER, {session_state, ClientName}).
 
 takeover_session(ClientName, Session) ->
-  gen_server:call(?SERVER, {takeover_session, ClientName, Session}).
+  gen_server:call(?SERVER, {takeover_session, ClientName, Session, self()}).
 
 connecting(ClientName) ->
   gen_server:cast(?SERVER, {connecting, ClientName}).
@@ -59,7 +58,7 @@ connecting(ClientName) ->
 %% ------------------------------------------------------------------
 
 init([]) ->
-  {ok, #s{cache=gb_trees:empty()}}.
+  {ok, #s{cache=gb_trees:empty(), pids=gb_trees:empty()}}.
 
 handle_call({log_out, ClientName, Payload}, _From, State) ->
   {reply, ok, do_log(ClientName, Payload, State)};
@@ -71,10 +70,16 @@ handle_call({log_in, ClientName, Seq}, _From, #s{cache=Cache} = State) ->
 handle_call({map_from, ClientName, Seq, Fun}, _From, #s{cache=Cache} = State) ->
   {reply, do_map_from(ClientName, Seq, Fun, Cache), State};
 
-handle_call({takeover_session, ClientName, Session}, _From, #s{cache=Cache} = State) ->
+handle_call({takeover_session, ClientName, Session, Pid}, _From, State) ->
+  #s{
+    cache = Cache,
+    pids = Pids
+  } = State,
+  erlang:monitor(process, Pid),
   {_,T,In,Out,Q} = gb_trees:get(ClientName, Cache),
   {reply, ok, State#s{
-      cache = gb_trees:update(ClientName, {Session,T,In,Out,Q}, Cache)
+      cache = gb_trees:update(ClientName, {Session,T,In,Out,Q}, Cache),
+      pids = gb_trees:insert(Pid, ClientName, Pids)
     }};
 
 handle_call({session_state, ClientName}, _From, #s{cache=Cache} = State) ->
@@ -107,6 +112,18 @@ handle_cast({connecting, ClientName}, #s{cache=Cache} = State) ->
 
 handle_cast(_Msg, State) ->
   {noreply, State}.
+
+handle_info({'DOWN', _, process, Pid, normal}, #s{pids = Pids} = State) ->
+  case gb_trees:lookup(Pid, Pids) of
+    {value, ClientName} ->
+      #s{cache = Cache} = State,
+      {noreply, State#s{
+          cache = gb_trees:delete(ClientName, Cache),
+          pids = gb_trees:delete(Pid, Pids)
+        }};
+    none ->
+      {noreply, State}
+  end;
 
 handle_info(_Info, State) ->
   {noreply, State}.
