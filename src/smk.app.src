@@ -1,4 +1,4 @@
-{application, smk_erlang_sdk, [
+{application, smk, [
     {description, "Smarkets API Software Development Kit for Erlang"},
     {vsn, "0"},
     {registered, []},

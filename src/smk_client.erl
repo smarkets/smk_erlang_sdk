@@ -238,12 +238,12 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
     }
   },
   Host =
-    case application:get_env(smk_erlang_sdk, host) of
+    case application:get_env(smk, host) of
       undefined   -> "api-dev.corp.smarkets.com";
       {ok, Host0} -> Host0
     end,
   Port =
-    case application:get_env(smk_erlang_sdk, port) of
+    case application:get_env(smk, port) of
       undefined   -> 3701;
       {ok, Port0} -> Port0
     end,

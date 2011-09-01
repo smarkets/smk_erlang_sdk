@@ -8,10 +8,10 @@
 -define(CONTRACT_ID, #seto_uuid_128{low=175001}).
 
 setup() ->
-  application:load(smk_erlang_sdk),
-  application:set_env(smk_erlang_sdk, host, "vagrant-dev.corp.smarkets.com"),
+  application:load(smk),
+  application:set_env(smk, host, "vagrant-dev.corp.smarkets.com"),
   %application:start(lager),
-  application:start(smk_erlang_sdk).
+  application:start(smk).
 
 login_test_() -> ?setup(
     {timeout, 10, fun() ->

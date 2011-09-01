@@ -9,8 +9,6 @@
   }).
 
 -include("seto_piqi.hrl").
-% uncomment this line in your own application
-%-include_lib("smk_erlang_sdk/include/seto_piqi.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
