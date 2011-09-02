@@ -30,7 +30,7 @@ terminate_client(Name) ->
 
 init([Cache]) ->
   Restart =
-    case application:get_env(smk_erlang_sdk, restart_strategy) of
+    case application:get_env(smk, restart_strategy) of
       {ok, R} -> R;
       _ -> transient
     end,
