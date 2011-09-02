@@ -2,6 +2,16 @@ Welcome to the Smarkets.com Erlang Software Development Kit!
 
 The API for Smarkets.com is based on a set of messages transported between Smarkets' servers and clients asyncronously in a specific sequence. Each incoming and outgoing message to and from Smarkets is assigned a incrementing sequence number starting at 1 and only resetting back to 1 if a reset/re-login message is received. A full description of the API and how to handle sessions and sequence incrementing / playback is located in the file named API in the same project.
 
+# Using with your Application #
+
+Add the following dependency to your [rebar](https://github.com/basho/rebar).config and have at it.
+
+    {smk, "0.2.0", {git, "https://github.com/smarkets/smk_erlang_sdk.git", {tag, "0.2.0"}}}
+
+Take a look at [smk_client](https://github.com/smarkets/smk_erlang_sdk/blob/master/src/smk_client.erl) and [smk_my_callbacks](https://github.com/smarkets/smk_erlang_sdk/blob/master/src/smk_my_callbacks.erl) example.
+
+*Requirements*: piqi 0.5.6 - the erlang piqi dependency for this is included in the main piqi repository so will be grabbed by rebar get-deps. Installation of piqi is outlined below.
+
 # Building #
 
 Message formats are defined using Piqi data definition files and can be found in the eto\_common and smk\_api\_common dependancies of this project fetched by running:
@@ -56,10 +66,3 @@ An example client is available in src/smk\_example\_client.erl - to start it up 
 
 As you can see from the above example the actual calls return ok and their outgoing sequence number, this means the message was sent to Smarkets, the response is asyncronously sent back from Smarkets and is in this example simply printed out by lager (logging). By being asyncronous it is possible to make more than one order before receiving the confirmation from the first.
 
-# Using with your Application #
-
-Add the following dependency to your [rebar](https://github.com/basho/rebar).config and have at it.
-
-    {smk, "0.2.0", {git, "https://github.com/smarkets/smk_erlang_sdk.git", {tag, "0.2.0"}}}
-
-Take a look at [smk_client](https://github.com/smarkets/smk_erlang_sdk/blob/master/src/smk_client.erl) and [smk_my_callbacks](https://github.com/smarkets/smk_erlang_sdk/blob/master/src/smk_my_callbacks.erl) example.
