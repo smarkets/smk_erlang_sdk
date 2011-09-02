@@ -23,7 +23,7 @@ To install the piqic command used to compile the fetched Piqi data definitions i
     cd deps/piqi/
     less INSTALL
 
-The resulting Erlang code is generated for by piqic and will be in erl/seto\_piqi.erl, include/seto\_piqi.hrl, src/eto\_piqi.erl, and include/eto\_piqi.hrl after running:
+The resulting Erlang code is generated for you by piqic and will be in src/seto\_piqi.erl, include/seto\_piqi.hrl, src/eto\_piqi.erl, and include/eto\_piqi.hrl after running:
 
     ./rebar compile
 
