@@ -6,7 +6,7 @@ The API for Smarkets.com is based on a set of messages transported between Smark
 
 Add the following dependency to your [rebar](https://github.com/basho/rebar).config and have at it.
 
-    {smk, "0.2.1", {git, "https://github.com/smarkets/smk_erlang_sdk.git", {tag, "0.2.1"}}}
+    {smk, "0.2.1", {git, "https://github.com/smarkets/smk_erlang_sdk.git", {tag, "v0.2.1"}}}
 
 Take a look at [smk_client](https://github.com/smarkets/smk_erlang_sdk/blob/master/src/smk_client.erl) and [smk_my_callbacks](https://github.com/smarkets/smk_erlang_sdk/blob/master/src/smk_my_callbacks.erl) example.
 
