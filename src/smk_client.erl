@@ -140,8 +140,8 @@ subscribe(Name, Mkt) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
       eto_payload=#eto_payload{},
-      type=market_subscription,
-      market_subscription=#seto_market_subscription{
+      type=market_subscribe,
+      market_subscribe=#seto_market_subscribe{
         market=Mkt
       }}).
 
@@ -150,8 +150,8 @@ unsubscribe(Name, Mkt) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
       eto_payload=#eto_payload{},
-      type=market_unsubscription,
-      market_unsubscription=#seto_market_unsubscription{
+      type=market_unsubscribe,
+      market_unsubscribe=#seto_market_unsubscribe{
         market=Mkt
       }}).
 
