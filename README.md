@@ -2,7 +2,9 @@ Welcome to the Smarkets.com Erlang Software Development Kit!
 
 The API for Smarkets.com is based on a set of messages transported between Smarkets' servers and clients asyncronously in a specific sequence. Each incoming and outgoing message to and from Smarkets is assigned a incrementing sequence number starting at 1 and only resetting back to 1 if a reset/re-login message is received. A full description of the API and how to handle sessions and sequence incrementing / playback is located in the file named API in the same project.
 
-Message formats are defined using Piqi data definition files and can be found in the eto_common and smk_api_common dependancies of this project fetched by running:
+= Building =
+
+Message formats are defined using Piqi data definition files and can be found in the eto\_common and smk\_api\_common dependancies of this project fetched by running:
 
     ./rebar get-deps
 
@@ -11,11 +13,11 @@ To install the piqic command used to compile the fetched Piqi data definitions i
     cd deps/piqi/
     less INSTALL
 
-The resulting Erlang code is generated for by piqic and will be in erl/seto_piqi.erl, include/seto_piqi.hrl, src/eto_piqi.erl, and include/eto_piqi.hrl after running:
+The resulting Erlang code is generated for by piqic and will be in erl/seto\_piqi.erl, include/seto\_piqi.hrl, src/eto\_piqi.erl, and include/eto\_piqi.hrl after running:
 
     ./rebar compile
 
-An example client is available in src/smk_example_client.erl - to start it up simply crack open the Erlang shell and start typing:
+An example client is available in src/smk\_example\_client.erl - to start it up simply crack open the Erlang shell and start typing:
 
     erl -pa ebin/ deps/*/ebin
     1> application:start(lager).
@@ -53,3 +55,11 @@ An example client is available in src/smk_example_client.erl - to start it up si
     {ok, 4}
 
 As you can see from the above example the actual calls return ok and their outgoing sequence number, this means the message was sent to Smarkets, the response is asyncronously sent back from Smarkets and is in this example simply printed out by lager (logging). By being asyncronous it is possible to make more than one order before receiving the confirmation from the first.
+
+= Using with your Application =
+
+Add the following dependency to your [rebar](https://github.com/basho/rebar).config and have at it.
+
+    {smk, "0.2.0", {git, "https://github.com/smarkets/smk_erlang_sdk.git", {tag, "0.2.0"}}}
+
+Take a look at [smk_client](https://github.com/smarkets/smk_erlang_sdk/blob/master/src/smk_client.erl) and [smk_my_callbacks](https://github.com/smarkets/smk_erlang_sdk/blob/master/src/smk_my_callbacks.erl) example.
