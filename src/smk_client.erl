@@ -140,8 +140,8 @@ subscribe(Name, Mkt) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
       eto_payload=#eto_payload{},
-      type=market_subscription,
-      market_subscription=#seto_market_subscription{
+      type=market_subscribe,
+      market_subscribe=#seto_market_subscribe{
         market=Mkt
       }}).
 
@@ -150,8 +150,8 @@ unsubscribe(Name, Mkt) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
       eto_payload=#eto_payload{},
-      type=market_unsubscription,
-      market_unsubscription=#seto_market_unsubscription{
+      type=market_unsubscribe,
+      market_unsubscribe=#seto_market_unsubscribe{
         market=Mkt
       }}).
 
@@ -240,7 +240,7 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
   },
   Host =
     case application:get_env(smk, host) of
-      undefined   -> "api-dev.corp.smarkets.com";
+      undefined   -> "api-sandbox.smarkets.com";
       {ok, Host0} -> Host0
     end,
   Port =
