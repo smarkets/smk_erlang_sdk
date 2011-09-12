@@ -5,7 +5,10 @@
     {mod, { smk_app, [] }},
     {applications, [
         kernel,
-        stdlib
+        stdlib,
+        crypto,
+        public_key,
+        ssl
       ]},
     {env, []}
   ]}.
