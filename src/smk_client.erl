@@ -240,10 +240,10 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
     end,
   Ssl =
     case application:get_env(smk, ssl) of
-      {ok, true} ->
-        true;
+      {ok, false} ->
+        false;
       _ ->
-        false
+        true
     end,
   Cache:connecting(Name),
   {ok, Sock} = smk_sock:connect(Ssl, Host, Port, ?SOCK_OPTS, []),
