@@ -248,7 +248,9 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
       {ok, Port0} -> Port0
     end,
   Cache:connecting(Name),
+  lager:log(info, self(), "Connecting ~p ~p", [Host, Port]),
   {ok, Sock} = gen_tcp:connect(Host, Port, ?SOCK_OPTS),
+  lager:log(info, self(), "Connected ~p", [Sock]),
   {ok, _, NewState} = send_call(Login, State#s{sock=Sock}),
   {next_state, StateName, NewState};
 
