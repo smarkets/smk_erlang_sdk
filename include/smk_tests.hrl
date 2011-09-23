@@ -80,12 +80,15 @@ all([H|T], F, Recv, Acc) ->
     })).
 
 -define(assertLogoutConfirmation(Seq),
+  ?assertLogout(Seq, confirmation)).
+
+-define(assertLogout(Seq, Reason),
   ?assertRecv(#seto_payload{
       eto_payload=#eto_payload{
         seq=Seq,
         type=logout,
         logout=#eto_logout{
-          reason=confirmation
+          reason=Reason
         }
       }
     })).

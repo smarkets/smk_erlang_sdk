@@ -23,6 +23,21 @@ login_test_() -> ?setup(
     end}
   ).
 
+unauthorised_test() ->
+  UserCreds = [
+    {username, <<"not a valid username">>},
+    {password, <<"not a valid password">>}
+  ],
+  Pid = self(),
+  Callback = fun(Payload,Session) ->
+      cb(Pid, Payload, Session)
+  end,
+  smk_clients_sup:start_client([
+      {callback, Callback}
+      |UserCreds
+    ]),
+  ?assertLogout(1, unauthorised).
+
 ping_test() ->
   {ok, C} = login(),
   ?assertLoginResponse(1),
