@@ -54,8 +54,8 @@
 
 %% send message
 -export([logout/1, ping/1, order/6, order_cancel/2]).
--export([subscribe/2, unsubscribe/2, market_quotes_request/2]).
--export([payload/2]).
+-export([subscribe/2, unsubscribe/2, market_quotes/2]).
+-export([payload/2, orders/1, orders_for_market/2]).
 
 %% ------------------------------------------------------------------
 %% gen_fsm Function Exports
@@ -155,13 +155,32 @@ unsubscribe(Name, Mkt) ->
         market=Mkt
       }}).
 
--spec market_quotes_request(name(), seto_market()) -> send_response().
-market_quotes_request(Name, Mkt) ->
+-spec market_quotes(name(), seto_market()) -> send_response().
+market_quotes(Name, Mkt) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
       eto_payload=#eto_payload{},
       type=market_quotes_request,
       market_quotes_request=#seto_market_quotes_request{
+        market=Mkt
+      }}).
+
+-spec orders(name()) -> send_response().
+orders(Name) ->
+  gen_fsm:sync_send_event(Name,
+    #seto_payload{
+      eto_payload=#eto_payload{},
+      type=orders_for_account_request,
+      orders_for_account_request=#seto_orders_for_account_request{}
+    }).
+
+-spec orders_for_market(name(), seto_market()) -> send_response().
+orders_for_market(Name, Mkt) ->
+  gen_fsm:sync_send_event(Name,
+    #seto_payload{
+      eto_payload=#eto_payload{},
+      type=orders_for_market_request,
+      orders_for_market_request=#seto_orders_for_market_request{
         market=Mkt
       }}).
 
@@ -246,7 +265,9 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
         true
     end,
   Cache:connecting(Name),
+  lager:log(info, self(), "Connecting ~p ~p", [Host, Port]),
   {ok, Sock} = smk_sock:connect(Ssl, Host, Port, ?SOCK_OPTS, []),
+  lager:log(info, self(), "Connected ~p", [Sock]),
   {ok, _, NewState} = send_call(Login, State#s{sock=Sock}),
   {next_state, StateName, NewState};
 
@@ -287,7 +308,7 @@ handle_info(Msg, logging_out, #s{logout_reason=undefined, sock=Sock} = State)
 
 handle_info(Msg, logging_out, #s{logout_reason=Reason, sock=Sock} = State)
     when Reason =:= confirmation; Reason =:= login_timeout; Reason =:= login_not_first_seq;
-    ?sock_closed(Msg) ->
+         Reason =:= unauthorised; ?sock_closed(Msg) ->
   lager:notice("logging_out: tcp_closed stopping due to logout_reason=~p ~p", [Reason, Sock]),
   {stop, normal, State};
 
@@ -534,5 +555,5 @@ backoff(T) ->
   lager:info("backoff Milli ~p", [Milli]),
   case Milli of
     0 -> 0;
-    _ -> erlang:min((?MAX_BACKOFF div Milli) * 1000, ?MAX_BACKOFF)
+    _ -> 0 %erlang:min((?MAX_BACKOFF div Milli) * 1000, ?MAX_BACKOFF)
   end.

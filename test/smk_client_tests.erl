@@ -10,6 +10,7 @@
 setup() ->
   application:load(smk),
   application:set_env(smk, host, "vagrant-dev.corp.smarkets.com"),
+  %application:set_env(smk, host, "api-dev.corp.smarkets.com"),
   %application:start(lager),
   application:start(smk).
 
@@ -21,6 +22,21 @@ login_test_() -> ?setup(
         ?assertLogoutConfirmation(2)
     end}
   ).
+
+unauthorised_test() ->
+  UserCreds = [
+    {username, <<"not a valid username">>},
+    {password, <<"not a valid password">>}
+  ],
+  Pid = self(),
+  Callback = fun(Payload,Session) ->
+      cb(Pid, Payload, Session)
+  end,
+  smk_clients_sup:start_client([
+      {callback, Callback}
+      |UserCreds
+    ]),
+  ?assertLogout(1, unauthorised).
 
 ping_test() ->
   {ok, C} = login(),
@@ -79,18 +95,20 @@ ping_resume_replay_test_() ->
         ?assertLogoutConfirmation(4)
     end}.
 
-order_create_test() ->
-  {ok, C} = login(),
-  ?assertLoginResponse(1),
-  Qty = 100000,
-  Px = 2500,
-  Side = buy,
-  {ok, 2} = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
-  ?assertOrderAccepted(2, Order, 2),
-  {ok, 3} = smk_client:order_cancel(C, Order),
-  ?assertOrderCancelled(3, Order, member_requested),
-  {ok, 4} = smk_client:logout(C),
-  ?assertLogoutConfirmation(4).
+order_create_test_() ->
+  {timeout, 15, fun() ->
+        {ok, C} = login(),
+        ?assertLoginResponse(1),
+        Qty = 100000,
+        Px = 2500,
+        Side = buy,
+        {ok, 2} = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
+        ?assertOrderAccepted(2, Order, 2),
+        {ok, 3} = smk_client:order_cancel(C, Order),
+        ?assertOrderCancelled(3, Order, member_requested),
+        {ok, 4} = smk_client:logout(C),
+        ?assertLogoutConfirmation(4)
+    end}.
 
 many_order_create_test() ->
   {ok, C} = login(),
@@ -128,7 +146,8 @@ many_order_create_test() ->
   {ok, 22} = smk_client:logout(C),
   ?assertLogoutConfirmation(22).
 
-market_subscription_test() ->
+market_subscription_test_() ->
+  {timeout, 20, fun() ->
   {ok, C} = login(),
   ?assertLoginResponse(1),
   {ok, 2} = smk_client:subscribe(C, ?MARKET_ID), 
@@ -145,7 +164,7 @@ market_subscription_test() ->
   ?assertOrderCancelled(6, Order, member_requested),
 
   {ok, 5} = smk_client:logout(C),
-  ?assertLogoutConfirmation(7).
+  ?assertLogoutConfirmation(7) end}.
 
 order_executed_test_() ->
   Qty = 50000,
