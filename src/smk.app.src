@@ -1,6 +1,6 @@
 {application, smk, [
     {description, "Smarkets API Software Development Kit for Erlang"},
-    {vsn, "0"},
+    {vsn, "0.3.0"},
     {registered, []},
     {mod, { smk_app, [] }},
     {applications, [
