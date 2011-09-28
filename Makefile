@@ -1,5 +1,8 @@
 .PHONY: test
 
+compile:
+	./rebar compile
+
 test:
 	./rebar skip_deps=true eunit
 

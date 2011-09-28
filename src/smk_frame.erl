@@ -1,4 +1,4 @@
--module(eto_frame).
+-module(smk_frame).
 
 -export([buf/0, buf_append/2, deframe/1, frame/1]).
 

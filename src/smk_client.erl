@@ -36,7 +36,7 @@
     sock,
     heartbeat_ref :: timer:tref(),
     drop_in = 0 :: non_neg_integer(),
-    buf = eto_frame:buf(),
+    buf = smk_frame:buf(),
     out :: pos_integer(),
     in :: pos_integer(),
     cache :: atom(),
@@ -265,11 +265,16 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
         true
     end,
   Cache:connecting(Name),
-  lager:log(info, self(), "Connecting ~p ~p", [Host, Port]),
-  {ok, Sock} = smk_sock:connect(Ssl, Host, Port, ?SOCK_OPTS, []),
-  lager:log(info, self(), "Connected ~p", [Sock]),
-  {ok, _, NewState} = send_call(Login, State#s{sock=Sock}),
-  {next_state, StateName, NewState};
+  lager:log(info, self(), "Connecting ~p ~p ssl:~p", [Host, Port, Ssl]),
+  case smk_sock:connect(Ssl, Host, Port, ?SOCK_OPTS, []) of
+    {ok, Sock} ->
+      lager:log(info, self(), "Connected ~p", [Sock]),
+      {ok, _, NewState} = send_call(Login, State#s{sock=Sock}),
+      {next_state, StateName, NewState};
+    Error ->
+      lager:log(error, self(), "Connection error ~p", [Error]),
+      {stop, normal, State}
+  end;
 
 handle_info({heartbeat_timeout, _}, awaiting_session = StateName, State) ->
   {next_state, StateName, State#s{heartbeat_ref=undefined}};
@@ -282,9 +287,9 @@ handle_info({heartbeat_timeout, _}, StateName, State) ->
   {next_state, StateName, State};
 
 handle_info({_, _, Data} = Msg, StateName, #s{buf=Buf, sock=Sock} = State)
-  when ?sock_data(Msg) ->
+    when ?sock_data(Msg) ->
   smk_sock:setopts(Sock, [{active,once}]),
-  Buf1 = eto_frame:buf_append(Buf, Data),
+  Buf1 = smk_frame:buf_append(Buf, Data),
   {NewBuf, Payloads} = deframe_all(Buf1, []),
   {NewStateName, NewState} =
     lists:foldl(
@@ -508,7 +513,7 @@ send_call(#seto_payload{eto_payload=Eto}=Payload0, State) ->
 
 -spec sock_send(any(), seto_payload()) -> ok | {error, any()}.
 sock_send(Sock, Payload) ->
-  smk_sock:send(Sock, eto_frame:frame(seto_piqi:gen_payload(Payload))).
+  smk_sock:send(Sock, smk_frame:frame(seto_piqi:gen_payload(Payload))).
 
 -spec replay_payload(seto_payload()) -> seto_payload().
 replay_payload(#seto_payload{eto_payload=#eto_payload{type=replay, seq=Seq}}) ->
@@ -528,10 +533,10 @@ gapfill(Seq) ->
       seq=Seq
     }}.
 
--spec deframe_all(eto_frame:buf(), list(binary())) ->
-  {eto_frame:buf(), list(binary())}.
+-spec deframe_all(smk_frame:buf(), list(binary())) ->
+  {smk_frame:buf(), list(binary())}.
 deframe_all(Buf, Acc) ->
-    case eto_frame:deframe(Buf) of
+    case smk_frame:deframe(Buf) of
         {PayloadData, Buf1} ->
             deframe_all(Buf1, [PayloadData|Acc]);
         Buf1 -> {Buf1, lists:reverse(Acc)}
@@ -555,5 +560,5 @@ backoff(T) ->
   lager:info("backoff Milli ~p", [Milli]),
   case Milli of
     0 -> 0;
-    _ -> 0 %erlang:min((?MAX_BACKOFF div Milli) * 1000, ?MAX_BACKOFF)
+    _ -> erlang:min((?MAX_BACKOFF div Milli) * 1000, ?MAX_BACKOFF)
   end.

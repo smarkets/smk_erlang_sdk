@@ -11,6 +11,9 @@ setup() ->
   application:load(smk),
   application:set_env(smk, host, "vagrant-dev.corp.smarkets.com"),
   %application:set_env(smk, host, "api-dev.corp.smarkets.com"),
+  application:start(crypto),
+  application:start(public_key),
+  application:start(ssl),
   %application:start(lager),
   application:start(smk).
 
