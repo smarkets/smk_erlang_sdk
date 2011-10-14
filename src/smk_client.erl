@@ -25,6 +25,7 @@
 -type opt() ::
     {username, binary()}
   | {password, binary()}
+  | {cookie, binary()}
   | {callback, fun()}.
 -type opts() :: list(opt()).
 -type send_response() ::
@@ -208,8 +209,11 @@ init([Cache, Opts]) ->
       lager:error("callback not defined"),
       {stop, normal};
     Callback ->
-      Backoff = backoff(T),
-      lager:info("connection backoff ~p, cache ~p", [Backoff, Cache]),
+      Backoff =
+        case proplists:get_value(backoff, Opts, true) of
+          true  -> backoff(T);
+          false -> 0
+        end,
       timer:send_after(Backoff, {connect, Opts}),
       {ok, awaiting_session, #s{
             session=Session,
@@ -274,7 +278,7 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
       {next_state, StateName, NewState};
     Error ->
       lager:log(error, self(), "Connection error ~p", [Error]),
-      {stop, normal, State}
+      {stop, Error, State}
   end;
 
 handle_info({heartbeat_timeout, _}, awaiting_session = StateName, State) ->
