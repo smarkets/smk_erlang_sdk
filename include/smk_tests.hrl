@@ -105,6 +105,18 @@ all([H|T], F, Recv, Acc) ->
       }
     })).
 
+-define(assertOrderRejected(Seq, Reason, ResponseSeq),
+  ?assertRecv(#seto_payload{
+      type=order_rejected,
+      order_rejected=#seto_order_rejected{
+        reason=Reason,
+        seq=ResponseSeq
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
+      }
+    })).
+
 -define(assertOrderCancelled(Seq, Order, Reason),
   ?assertRecv(?orderCancelled(Seq, Order, Reason))).
 

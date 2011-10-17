@@ -9,8 +9,11 @@
 
 setup() ->
   application:load(smk),
-  application:set_env(smk, host, "vagrant-dev.corp.smarkets.com"),
   %application:set_env(smk, host, "api-dev.corp.smarkets.com"),
+  %application:set_env(smk, port, 3701),
+  application:set_env(smk, host, "localhost"),
+  application:set_env(smk, port, 3700),
+  application:set_env(smk, ssl, false),
   application:start(crypto),
   application:start(public_key),
   application:start(ssl),
@@ -36,7 +39,8 @@ unauthorised_test() ->
       cb(Pid, Payload, Session)
   end,
   smk_clients_sup:start_client([
-      {callback, Callback}
+      {callback, Callback},
+      {backoff, false}
       |UserCreds
     ]),
   ?assertLogout(1, unauthorised).
@@ -111,6 +115,19 @@ order_create_test_() ->
         ?assertOrderCancelled(3, Order, member_requested),
         {ok, 4} = smk_client:logout(C),
         ?assertLogoutConfirmation(4)
+    end}.
+
+order_rejected_market_not_found_test_() ->
+  {timeout, 15, fun() ->
+        {ok, C} = login(),
+        ?assertLoginResponse(1),
+        Qty = 100000,
+        Px = 2500,
+        Side = buy,
+        {ok, 2} = smk_client:order(C, Qty, Px, Side, #seto_uuid_128{low=99999999}, ?CONTRACT_ID),
+        ?assertOrderRejected(2, market_not_found, 2),
+        {ok, 3} = smk_client:logout(C),
+        ?assertLogoutConfirmation(3)
     end}.
 
 many_order_create_test() ->
@@ -218,7 +235,8 @@ login_with_user(User) ->
       cb(Pid, Payload, Session)
   end,
   smk_clients_sup:start_client([
-      {callback, Callback}
+      {callback, Callback},
+      {backoff, false}
       |UserCreds
     ]).
 login_with_user(Name, User) ->
@@ -228,7 +246,8 @@ login_with_user(Name, User) ->
       cb(Pid, Payload, Session)
   end,
   smk_clients_sup:start_client({local, Name}, [
-      {callback, Callback}
+      {callback, Callback},
+      {backoff, false}
       |UserCreds
     ]).
 

@@ -26,6 +26,7 @@
     {username, binary()}
   | {password, binary()}
   | {cookie, binary()}
+  | {backoff, boolean()}
   | {callback, fun()}.
 -type opts() :: list(opt()).
 -type send_response() ::
@@ -284,10 +285,14 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
 handle_info({heartbeat_timeout, _}, awaiting_session = StateName, State) ->
   {next_state, StateName, State#s{heartbeat_ref=undefined}};
 handle_info({heartbeat_timeout, Seq}, StateName, #s{out=Seq} = State0) ->
-  {ok, _, State} = send_call(
-    #seto_payload{type=eto,eto_payload=#eto_payload{type=heartbeat}},
-    State0#s{heartbeat_ref=undefined}),
-  {next_state, StateName, State};
+  case send_call(
+      #seto_payload{type=eto,eto_payload=#eto_payload{type=heartbeat}},
+      State0#s{heartbeat_ref=undefined}) of
+    {ok, _, State} ->
+      {next_state, StateName, State};
+    {{error, closed}, State} ->
+      {next_state, StateName, State}
+  end;
 handle_info({heartbeat_timeout, _}, StateName, State) ->
   {next_state, StateName, State};
 
