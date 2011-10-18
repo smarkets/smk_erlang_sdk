@@ -80,12 +80,15 @@ all([H|T], F, Recv, Acc) ->
     })).
 
 -define(assertLogoutConfirmation(Seq),
+  ?assertLogout(Seq, confirmation)).
+
+-define(assertLogout(Seq, Reason),
   ?assertRecv(#seto_payload{
       eto_payload=#eto_payload{
         seq=Seq,
         type=logout,
         logout=#eto_logout{
-          reason=confirmation
+          reason=Reason
         }
       }
     })).
@@ -95,6 +98,18 @@ all([H|T], F, Recv, Acc) ->
       type=order_accepted,
       order_accepted=#seto_order_accepted{
         order=Order,
+        seq=ResponseSeq
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
+      }
+    })).
+
+-define(assertOrderRejected(Seq, Reason, ResponseSeq),
+  ?assertRecv(#seto_payload{
+      type=order_rejected,
+      order_rejected=#seto_order_rejected{
+        reason=Reason,
         seq=ResponseSeq
       },
       eto_payload=#eto_payload{

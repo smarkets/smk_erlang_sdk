@@ -17,26 +17,28 @@
 
 -include("eto_piqi.hrl").
 -include("seto_piqi.hrl").
+-include("smk_sock.hrl").
 
--type socket() :: port().
 -type name() :: atom() | pid().
 -type state_name() :: awaiting_session | logged_in | logging_out.
 -type from() :: {pid(),reference()}.
 -type opt() ::
     {username, binary()}
   | {password, binary()}
+  | {cookie, binary()}
+  | {backoff, boolean()}
   | {callback, fun()}.
 -type opts() :: list(opt()).
--type send_response() :: 
+-type send_response() ::
     {ok, eto_seq()}
   | {error, inet:posix()}.
 
 
 -record(s, {
-    sock :: socket(),
+    sock,
     heartbeat_ref :: timer:tref(),
-    drop_in = 0 :: pos_integer(),
-    buf = eto_frame:buf(),
+    drop_in = 0 :: non_neg_integer(),
+    buf = smk_frame:buf(),
     out :: pos_integer(),
     in :: pos_integer(),
     cache :: atom(),
@@ -54,15 +56,15 @@
 
 %% send message
 -export([logout/1, ping/1, order/6, order_cancel/2]).
--export([subscribe/2, unsubscribe/2, market_quotes_request/2]).
--export([payload/2]).
+-export([subscribe/2, unsubscribe/2, market_quotes/2]).
+-export([payload/2, orders/1, orders_for_market/2]).
 
 %% ------------------------------------------------------------------
 %% gen_fsm Function Exports
 %% ------------------------------------------------------------------
 
 -export([
-    init/1, handle_event/3, handle_sync_event/4, handle_info/3, 
+    init/1, handle_event/3, handle_sync_event/4, handle_info/3,
     terminate/3, code_change/4
   ]).
 
@@ -155,13 +157,32 @@ unsubscribe(Name, Mkt) ->
         market=Mkt
       }}).
 
--spec market_quotes_request(name(), seto_market()) -> send_response().
-market_quotes_request(Name, Mkt) ->
+-spec market_quotes(name(), seto_market()) -> send_response().
+market_quotes(Name, Mkt) ->
   gen_fsm:sync_send_event(Name,
     #seto_payload{
       eto_payload=#eto_payload{},
       type=market_quotes_request,
       market_quotes_request=#seto_market_quotes_request{
+        market=Mkt
+      }}).
+
+-spec orders(name()) -> send_response().
+orders(Name) ->
+  gen_fsm:sync_send_event(Name,
+    #seto_payload{
+      eto_payload=#eto_payload{},
+      type=orders_for_account_request,
+      orders_for_account_request=#seto_orders_for_account_request{}
+    }).
+
+-spec orders_for_market(name(), seto_market()) -> send_response().
+orders_for_market(Name, Mkt) ->
+  gen_fsm:sync_send_event(Name,
+    #seto_payload{
+      eto_payload=#eto_payload{},
+      type=orders_for_market_request,
+      orders_for_market_request=#seto_orders_for_market_request{
         market=Mkt
       }}).
 
@@ -175,7 +196,7 @@ payload(Name, Payload) ->
 %% ------------------------------------------------------------------
 -type init_opt() :: atom() | opts().
 
--spec init(list(init_opt())) -> {ok, state_name(), #s{}}.
+-spec init(list(init_opt())) -> {ok, state_name(), #s{}} | {stop, normal}.
 init([Cache, Opts]) ->
   Name =
     case process_info(self(), registered_name) of
@@ -189,8 +210,11 @@ init([Cache, Opts]) ->
       lager:error("callback not defined"),
       {stop, normal};
     Callback ->
-      Backoff = backoff(T),
-      lager:info("connection backoff ~p, cache ~p", [Backoff, Cache]),
+      Backoff =
+        case proplists:get_value(backoff, Opts, true) of
+          true  -> backoff(T);
+          false -> 0
+        end,
       timer:send_after(Backoff, {connect, Opts}),
       {ok, awaiting_session, #s{
             session=Session,
@@ -211,15 +235,6 @@ handle_event(_Event, StateName, State) ->
 handle_sync_event(_Event, _From, StateName, State) ->
   {next_state, StateName, State}.
 
--type info() ::
-    {connect, opts()}
-  | {heartbeat_timeout, eto_seq()}
-  | {tcp, socket(), binary()}
-  | {tcp_closed, socket()}
-  | {tcp_error, socket(), gen_tcp:posix()}.
-
--spec handle_info(info(), state_name(), #s{}) -> 
-  {next_state, state_name(), #s{}}.
 handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Name} = State) ->
   Login = #seto_payload{
     eto_payload=
@@ -234,7 +249,8 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
     type=login,
     login=#seto_login{
       username=proplists:get_value(username, Opts),
-      password=proplists:get_value(password, Opts)
+      password=proplists:get_value(password, Opts),
+      cookie=proplists:get_value(cookie, Opts)
     }
   },
   Host =
@@ -247,24 +263,43 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
       undefined   -> 3701;
       {ok, Port0} -> Port0
     end,
+  Ssl =
+    case application:get_env(smk, ssl) of
+      {ok, false} ->
+        false;
+      _ ->
+        true
+    end,
   Cache:connecting(Name),
-  {ok, Sock} = gen_tcp:connect(Host, Port, ?SOCK_OPTS),
-  {ok, _, NewState} = send_call(Login, State#s{sock=Sock}),
-  {next_state, StateName, NewState};
+  lager:log(info, self(), "Connecting ~p ~p ssl:~p", [Host, Port, Ssl]),
+  case smk_sock:connect(Ssl, Host, Port, ?SOCK_OPTS, []) of
+    {ok, Sock} ->
+      lager:log(info, self(), "Connected ~p", [Sock]),
+      {ok, _, NewState} = send_call(Login, State#s{sock=Sock}),
+      {next_state, StateName, NewState};
+    Error ->
+      lager:log(error, self(), "Connection error ~p", [Error]),
+      {stop, Error, State}
+  end;
 
 handle_info({heartbeat_timeout, _}, awaiting_session = StateName, State) ->
   {next_state, StateName, State#s{heartbeat_ref=undefined}};
 handle_info({heartbeat_timeout, Seq}, StateName, #s{out=Seq} = State0) ->
-  {ok, _, State} = send_call(
-    #seto_payload{type=eto,eto_payload=#eto_payload{type=heartbeat}},
-    State0#s{heartbeat_ref=undefined}),
-  {next_state, StateName, State};
+  case send_call(
+      #seto_payload{type=eto,eto_payload=#eto_payload{type=heartbeat}},
+      State0#s{heartbeat_ref=undefined}) of
+    {ok, _, State} ->
+      {next_state, StateName, State};
+    {{error, closed}, State} ->
+      {next_state, StateName, State}
+  end;
 handle_info({heartbeat_timeout, _}, StateName, State) ->
   {next_state, StateName, State};
 
-handle_info({tcp, Sock, Data}, StateName, #s{buf=Buf} = State) ->
-  inet:setopts(Sock, [{active,once}]),
-  Buf1 = eto_frame:buf_append(Buf, Data),
+handle_info({_, _, Data} = Msg, StateName, #s{buf=Buf, sock=Sock} = State)
+    when ?sock_data(Msg) ->
+  smk_sock:setopts(Sock, [{active,once}]),
+  Buf1 = smk_frame:buf_append(Buf, Data),
   {NewBuf, Payloads} = deframe_all(Buf1, []),
   {NewStateName, NewState} =
     lists:foldl(
@@ -281,24 +316,27 @@ handle_info({tcp, Sock, Data}, StateName, #s{buf=Buf} = State) ->
       {StateName, State}, Payloads),
   {next_state, NewStateName, NewState#s{buf=NewBuf}};
 
-handle_info({tcp_closed, Sock}, logging_out, #s{logout_reason=undefined} = State) ->
+handle_info(Msg, logging_out, #s{logout_reason=undefined, sock=Sock} = State)
+  when ?sock_closed(Msg) ->
   lager:notice("logging_out: tcp_closed logout_reason=undefined ~p", [Sock]),
   {stop, normal, State};
 
-handle_info({tcp_closed, Sock}, logging_out, #s{logout_reason=Reason} = State)
-    when Reason =:= confirmation; Reason =:= login_timeout; Reason =:= login_not_first_seq ->
+handle_info(Msg, logging_out, #s{logout_reason=Reason, sock=Sock} = State)
+    when Reason =:= confirmation; Reason =:= login_timeout; Reason =:= login_not_first_seq;
+         Reason =:= unauthorised; ?sock_closed(Msg) ->
   lager:notice("logging_out: tcp_closed stopping due to logout_reason=~p ~p", [Reason, Sock]),
   {stop, normal, State};
 
-handle_info({tcp_closed, Sock}, logging_out, #s{logout_reason=Reason} = State) ->
+handle_info(Msg, logging_out, #s{logout_reason=Reason, sock=Sock} = State)
+  when ?sock_closed(Msg) ->
   lager:notice("logging_out: tcp_closed while logout_reason=~p ~p", [Reason, Sock]),
   {stop, {logging_out, Reason}, State};
 
-handle_info({tcp_closed, Sock}, StateName, State) ->
+handle_info(Msg, StateName, State=#s{sock=Sock}) when ?sock_closed(Msg) ->
   lager:notice("~p: tcp_closed ~p", [StateName, Sock]),
   {stop, {tcp_error, closed}, State};
 
-handle_info({tcp_error, Sock, Reason}, StateName, State) ->
+handle_info({_, _, Reason} = Msg, StateName, State=#s{sock=Sock}) when ?sock_error(Msg) ->
   lager:error("~p: tcp_error ~p ~p", [StateName, Sock, Reason]),
   {stop, {tcp_error, Reason}, State};
 
@@ -460,7 +498,7 @@ login_payload(_, StateName, State) ->
   {StateName, State}.
 
 -spec send_call(seto_payload(), #s{}) ->
-  {ok, eto_seq(), #s{}} | {{error, gen_tcp:posix()}, #s{}}.
+  {ok, eto_seq(), #s{}} | {{error, any()}, #s{}}.
 send_call(#seto_payload{eto_payload=Eto}=Payload0, State) ->
   #s{
     name=Name,
@@ -483,9 +521,9 @@ send_call(#seto_payload{eto_payload=Eto}=Payload0, State) ->
       {Error, State}
   end.
 
--spec sock_send(socket(), seto_payload()) -> ok | {error, gen_tcp:posix()}.
+-spec sock_send(any(), seto_payload()) -> ok | {error, any()}.
 sock_send(Sock, Payload) ->
-  gen_tcp:send(Sock, eto_frame:frame(seto_piqi:gen_payload(Payload))).
+  smk_sock:send(Sock, smk_frame:frame(seto_piqi:gen_payload(Payload))).
 
 -spec replay_payload(seto_payload()) -> seto_payload().
 replay_payload(#seto_payload{eto_payload=#eto_payload{type=replay, seq=Seq}}) ->
@@ -505,10 +543,10 @@ gapfill(Seq) ->
       seq=Seq
     }}.
 
--spec deframe_all(eto_frame:buf(), list(binary())) ->
-  {eto_frame:buf(), list(binary())}.
+-spec deframe_all(smk_frame:buf(), list(binary())) ->
+  {smk_frame:buf(), list(binary())}.
 deframe_all(Buf, Acc) ->
-    case eto_frame:deframe(Buf) of
+    case smk_frame:deframe(Buf) of
         {PayloadData, Buf1} ->
             deframe_all(Buf1, [PayloadData|Acc]);
         Buf1 -> {Buf1, lists:reverse(Acc)}
