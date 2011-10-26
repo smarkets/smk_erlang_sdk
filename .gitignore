@@ -1,5 +1,6 @@
 .eunit/
-ebin/
+ebin/*.beam
+ebin/*.app
 deps/
 src/seto_piqi.erl
 src/eto_piqi.erl
