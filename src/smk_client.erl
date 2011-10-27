@@ -58,7 +58,7 @@
 -export([logout/1, ping/1, order/6, order_cancel/2]).
 -export([subscribe/2, unsubscribe/2, market_quotes/2]).
 -export([payload/2, orders/1, orders_for_market/2]).
--export([account_state/1]).
+-export([orders_for_account/1, account_state/1]).
 
 %% ------------------------------------------------------------------
 %% gen_fsm Function Exports
@@ -176,6 +176,14 @@ orders(Name) ->
       type=orders_for_account_request,
       orders_for_account_request=#seto_orders_for_account_request{}
     }).
+
+-spec orders_for_account(name()) -> send_response().
+orders_for_account(Name) ->
+  gen_fsm:sync_send_event(Name,
+    #seto_payload{
+      eto_payload=#eto_payload{},
+      type=orders_for_account_request
+      }).
 
 -spec orders_for_market(name(), seto_market()) -> send_response().
 orders_for_market(Name, Mkt) ->
