@@ -130,6 +130,19 @@ order_rejected_market_not_found_test_() ->
         ?assertLogoutConfirmation(3)
     end}.
 
+order_rejected_contract_not_found_test() ->
+  {ok, C} = login(),
+  ?assertLoginResponse(1),
+  Qty = 100000,
+  Px = 2500,
+  Side = buy,
+  {ok, 2} = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, #seto_uuid_128{low=0}),
+  ?assertOrderRejected(2, contract_not_found, 2),
+  {ok, 3} = smk_client:logout(C),
+  ?assertLogoutConfirmation(3).
+
+
+
 many_order_create_test() ->
   {ok, C} = login(),
   ?assertLoginResponse(1),
