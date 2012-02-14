@@ -29,6 +29,37 @@ login_test_() -> ?setup(
     end}
   ).
 
+account_state_exposure_test() ->
+  {ok, C} = login(),
+  ?assertLoginResponse(1),
+
+  {ok, 2} = smk_client:account_state(C),
+  ?assertAccountState(2, #seto_account_state{
+      exposure = #seto_decimal{value=0, exponent=2}
+    }),
+
+  Qty = 100000,
+  Px = 2500,
+  Side = buy,
+  {ok, 3} = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
+  ?assertOrderAccepted(3, Order, 3),
+
+  {ok, 4} = smk_client:account_state(C),
+  ?assertAccountState(4, #seto_account_state{
+      exposure = #seto_decimal{value=-250, exponent=2}
+    }),
+
+  {ok, 5} = smk_client:order_cancel(C, Order),
+  ?assertOrderCancelled(5, Order, member_requested),
+
+  {ok, 6} = smk_client:account_state(C),
+  ?assertAccountState(6, #seto_account_state{
+      exposure = #seto_decimal{value=0, exponent=2}
+    }),
+
+  {ok, 7} = smk_client:logout(C),
+  ?assertLogoutConfirmation(7).
+
 unauthorised_test() ->
   UserCreds = [
     {username, <<"not a valid username">>},
