@@ -290,7 +290,16 @@ handle_info({connect, Opts}, StateName, #s{session=Session, cache=Cache, name=Na
     end,
   Cache:connecting(Name),
   lager:log(info, self(), "Connecting ~p ~p ssl:~p", [Host, Port, Ssl]),
-  case smk_sock:connect(Ssl, Host, Port, ?SOCK_OPTS, []) of
+  SslOpts =
+    case Host of
+      "api.smarkets.com" ->
+        [
+          {verify, verify_peer},
+          {cacertfile, "ca-api.smarkets.com.crt"}
+        ];
+      _ -> []
+    end,
+  case smk_sock:connect(Ssl, Host, Port, ?SOCK_OPTS, SslOpts) of
     {ok, Sock} ->
       lager:log(info, self(), "Connected ~p", [Sock]),
       {ok, _, NewState} = send_call(Login, State#s{sock=Sock}),
@@ -392,7 +401,7 @@ logging_out(_Message, _From, State0) ->
 %% async
 
 awaiting_session(stop, State) ->
-  {next_state, awaiting_session, State}.
+  {stop, normal, State}.
 
 logged_in(drop_in, #s{drop_in=Drop} = State) ->
   {next_state, logged_in, State#s{drop_in=Drop+1}};

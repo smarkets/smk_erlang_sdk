@@ -41,7 +41,7 @@ An example client is available in src/smk\_example\_client.erl - to start it up 
                            undefined} ... }
     2> rr(seto_piqi).
     [...]
-    3> smk_client:order(smk_my_callbacks, 400000, 25, buy, #seto_uuid_128{low=122001}, #seto_uuid_128{low=175002}).
+    3> smk_client:order(smk_my_callbacks, 400000, 2500, buy, #seto_uuid_128{low=122001}, #seto_uuid_128{low=175002}).
     {ok, 2}
     Received {seto_payload,order_accepted,
                         {eto_payload,2,undefined,false,undefined,undefined,
