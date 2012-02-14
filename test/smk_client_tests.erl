@@ -35,7 +35,7 @@ account_state_exposure_test() ->
 
   {ok, 2} = smk_client:account_state(C),
   ?assertAccountState(2, #seto_account_state{
-      exposure = #seto_decimal{value=0, exponent=2}
+      exposure = #seto_decimal{value=Exp, exponent=2}
     }),
 
   Qty = 100000,
@@ -45,8 +45,9 @@ account_state_exposure_test() ->
   ?assertOrderAccepted(3, Order, 3),
 
   {ok, 4} = smk_client:account_state(C),
+  NextExp = Exp - 250,
   ?assertAccountState(4, #seto_account_state{
-      exposure = #seto_decimal{value=-250, exponent=2}
+      exposure = #seto_decimal{value=NextExp, exponent=2}
     }),
 
   {ok, 5} = smk_client:order_cancel(C, Order),
@@ -54,7 +55,7 @@ account_state_exposure_test() ->
 
   {ok, 6} = smk_client:account_state(C),
   ?assertAccountState(6, #seto_account_state{
-      exposure = #seto_decimal{value=0, exponent=2}
+      exposure = #seto_decimal{value=Exp, exponent=2}
     }),
 
   {ok, 7} = smk_client:logout(C),
