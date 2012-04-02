@@ -82,6 +82,13 @@ all([H|T], F, Recv, Acc) ->
 -define(assertLogoutConfirmation(Seq),
   ?assertLogout(Seq, confirmation)).
 
+-define(assertAccountState(Seq, State),
+  ?assertRecv(#seto_payload{
+      eto_payload=#eto_payload{seq=Seq},
+      type=account_state,
+      account_state=State
+    })).
+
 -define(assertLogout(Seq, Reason),
   ?assertRecv(#seto_payload{
       eto_payload=#eto_payload{
