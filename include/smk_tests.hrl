@@ -26,20 +26,14 @@ all([], _, '$all', [], Acc) ->
   Acc;
 all(L, F, '$all', L2, Acc) when L =/= [] orelse L2 =/= [] ->
   all(L++L2, F, recv(), [], Acc);
-all([], F, Recv, [H], Acc) ->
-  Ret = F(H, Recv), % none left, definitely not one of these
-  [Ret|Acc];
 all([], F, Recv, L, Acc) ->
-  ?debugFmt("all([], F, ~p, ~p, ~p)", [Recv, L, Acc]),
   all(L, F, Recv, [], Acc);
 all([H|T], F, Recv, Tried, Acc) ->
   try
     Ret = F(H, Recv),
-    ?debugFmt("match ~p ~p", [H, Recv]),
     all(T ++ Tried, F, '$all', [], [Ret|Acc])
   catch
     error:{badmatch,Recv} ->
-      ?debugFmt("badmatch ~p ~p", [H, Recv]),
       all(T, F, Recv, [H|Tried], Acc)
   end.
 

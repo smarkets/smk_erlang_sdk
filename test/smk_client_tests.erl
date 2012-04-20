@@ -6,8 +6,6 @@
 -define(setup(F), {setup, fun setup/0, F}).
 -define(MARKET_ID, #seto_uuid_128{low=126002}).
 -define(CONTRACT_ID, #seto_uuid_128{low=180001}).
-%  seto_uuid128:to_uuid128(<<"000000000000000000000001ec32c024">>).
-%  seto_uuid128:to_uuid128(<<"000000000000000000000002bf21cccc">>).
 
 setup() ->
   application:load(smk),
@@ -32,7 +30,7 @@ login_test_() -> ?setup(
     end}
   ).
 
-account_state_exposure_est() ->
+account_state_exposure_test() ->
   {ok, C} = login(),
   ?assertLoginResponse(1),
 
@@ -71,7 +69,7 @@ account_state_exposure_est() ->
   {ok, 7} = smk_client:logout(C),
   ?assertLogoutConfirmation(7).
 
-unauthorised_est() ->
+unauthorised_test() ->
   UserCreds = [
     {username, <<"not a valid username">>},
     {password, <<"not a valid password">>}
@@ -87,7 +85,7 @@ unauthorised_est() ->
     ]),
   ?assertLogout(1, unauthorised).
 
-ping_est() ->
+ping_test() ->
   {ok, C} = login(),
   ?assertLoginResponse(1),
   lists:foreach(
@@ -104,7 +102,7 @@ ping_est() ->
   {ok, 12} = smk_client:logout(C),
   ?assertLogoutConfirmation(12).
 
-ping_replay_est() ->
+ping_replay_test() ->
   {ok, C} = login(),
   ?assertLoginResponse(1),
   ok = smk_client:drop_in(C),
@@ -117,9 +115,9 @@ ping_replay_est() ->
   {ok, 5} = smk_client:logout(C),
   ?assertLogoutConfirmation(4).
 
-resume_est_() ->
+resume_test_() ->
   {timeout, 15, fun() ->
-        Name = resume_est,
+        Name = resume_test,
         {ok, _} = login(Name),
         ?assertLoginResponse(1, Session),
         exit(whereis(Name), kill),
@@ -128,9 +126,9 @@ resume_est_() ->
         ?assertLogoutConfirmation(3)
     end}.
 
-ping_resume_replay_est_() ->
+ping_resume_replay_test_() ->
   {timeout, 15, fun() ->
-        Name = ping_resume_replay_est,
+        Name = ping_resume_replay_test,
         {ok, _} = login(Name),
         ?assertLoginResponse(1, Session),
         smk_client:drop_in(Name),
@@ -145,7 +143,7 @@ ping_resume_replay_est_() ->
         ?assertLogoutConfirmation(4)
     end}.
 
-order_create_est_() ->
+order_create_test_() ->
   {timeout, 15, fun() ->
         {ok, C} = login(),
         ?assertLoginResponse(1),
@@ -160,7 +158,7 @@ order_create_est_() ->
         ?assertLogoutConfirmation(4)
     end}.
 
-order_rejected_market_not_found_est_() ->
+order_rejected_market_not_found_test_() ->
   {timeout, 15, fun() ->
         {ok, C} = login(),
         ?assertLoginResponse(1),
@@ -173,7 +171,7 @@ order_rejected_market_not_found_est_() ->
         ?assertLogoutConfirmation(3)
     end}.
 
-order_rejected_contract_not_found_est() ->
+order_rejected_contract_not_found_test() ->
   {ok, C} = login(),
   ?assertLoginResponse(1),
   Qty = 100000,
@@ -183,8 +181,6 @@ order_rejected_contract_not_found_est() ->
   ?assertOrderRejected(2, contract_not_found, 2),
   {ok, 3} = smk_client:logout(C),
   ?assertLogoutConfirmation(3).
-
-
 
 many_order_create_test_() ->
   {timeout, 20, fun() ->
@@ -197,33 +193,22 @@ many_order_create_test_() ->
         lists:foreach(
           fun(I) ->
               I1 = I + 1,
-              ?debugFmt("Order ~p", [I1]),
               {ok, I1} = smk_client:order(C, Qty, Px+(I*100), Side, ?MARKET_ID, ?CONTRACT_ID)
           end,
           All
         ),
-        Orders = all(All,
-          fun(I, Recv) ->
-              I1 = I + 1,
-              ?orderAccepted(_, Order, I1) = Recv,
-              Order
-          end
-        ),
-        ?debugFmt("Orders ~p", [Orders]),
-        %Orders =
-        %  lists:map(
-        %    fun(I) ->
-        %      I1 = I + 1,
-        %      ?assertOrderAccepted(I1, Order, I1),
-        %      Order
-        %    end,
-        %    lists:seq(1, 10)
-        %  ),
+        Orders =
+          lists:map(
+            fun(I) ->
+                I1 = I + 1,
+                ?assertOrderAccepted(I1, Order, I1),
+                Order
+            end,
+            lists:seq(1, 10)
+          ),
         lists:foreach(
           fun(Order) ->
-              ?debugFmt("Order cancel ~p", [Order]),
-              {ok, _} = smk_client:order_cancel(C, Order),
-              ?debugFmt("Order cancelled", [])
+              {ok, _} = smk_client:order_cancel(C, Order)
           end, Orders
         ),
 
@@ -236,7 +221,7 @@ many_order_create_test_() ->
         ?assertLogoutConfirmation(22)
     end}.
 
-market_subscription_est_() ->
+market_subscription_test_() ->
   {timeout, 20, fun() ->
   {ok, C} = login(),
   ?assertLoginResponse(1),
@@ -256,7 +241,7 @@ market_subscription_est_() ->
   {ok, 5} = smk_client:logout(C),
   ?assertLogoutConfirmation(7) end}.
 
-order_executed_est_() ->
+order_executed_test_() ->
   Qty = 50000,
   Px = 2500,
   {inparallel, [
