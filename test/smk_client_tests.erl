@@ -143,6 +143,23 @@ ping_resume_replay_test_() ->
         ?assertLogoutConfirmation(4)
     end}.
 
+order_invalid_test_() ->
+  {timeout, 15, fun() ->
+        {ok, C} = login(),
+        ?assertLoginResponse(1),
+        InvalidQty = 2147483648,
+        InvalidPx = 10000,
+        Side = buy,
+        {ok, 2} = smk_client:order(C, InvalidQty, 2000, Side, ?MARKET_ID, ?CONTRACT_ID),
+        ?assertOrderInvalid(2, 2, [invalid_quantity]),
+        {ok, 3} = smk_client:order(C, 100000, InvalidPx, Side, ?MARKET_ID, ?CONTRACT_ID),
+        ?assertOrderInvalid(3, 3, [invalid_price]),
+        {ok, 4} = smk_client:order(C, InvalidQty, InvalidPx, Side, ?MARKET_ID, ?CONTRACT_ID),
+        ?assertOrderInvalid(4, 4, [invalid_quantity, invalid_price]),
+        {ok, 5} = smk_client:logout(C),
+        ?assertLogoutConfirmation(5)
+    end}.
+
 order_create_test_() ->
   {timeout, 15, fun() ->
         {ok, C} = login(),

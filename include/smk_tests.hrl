@@ -127,6 +127,21 @@ all([H|T], F, Recv, Tried, Acc) ->
       }
     }).
 
+-define(orderInvalid(Seq, ResponseSeq, Reasons),
+    #seto_payload{
+      type=order_invalid,
+      order_invalid=#seto_order_invalid{
+        seq=ResponseSeq,
+        reasons=Reasons
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
+      }
+    }).
+
+-define(assertOrderInvalid(Seq, ResponseSeq, Reasons),
+  ?assertRecv(?orderInvalid(Seq, ResponseSeq, Reasons))).
+
 -define(assertOrderAccepted(Seq, Order, ResponseSeq),
   ?assertRecv(?orderAccepted(Seq, Order, ResponseSeq))).
 
