@@ -1,25 +1,40 @@
+-include_lib("eunit/include/eunit.hrl").
 -include("eto_piqi.hrl").
 -include("seto_piqi.hrl").
 
 recv() ->
   receive
-    Any -> Any
+    Any ->
+      #seto_payload{type=Type, eto_payload=#eto_payload{seq=Seq}} = Any,
+      io:format("Recevied ~p~n", [Seq]),
+      case Type of
+        order_accepted ->
+          #seto_payload{order_accepted=A} = Any,
+          io:format("Accepted ~p~n", [A]);
+          _ -> ok
+      end,
+      Any
   end.
 
--spec all(list(any()), function()) -> ok.
-all([], _) -> ok;
-all(L, F)  -> all(L, F, recv(), []).
+-spec all(list(any()), fun((any(), any()) -> any())) -> list(any()).
+all([], _) -> [];
+all(L, F)  -> all(L, F, recv(), [], []).
 
--spec all(list(any()), function(), seto_payload(), list(any())) -> ok.
-all([], F, Recv, [H|_]) ->
-  F(H, Recv); % none left, definitely not one of these
-all([H|T], F, Recv, Acc) ->
+-spec all(list(any()), fun((any(), any()) -> any()), '%all' | seto_payload(),
+      list(any()), list(any())) -> list(any()).
+all([], _, '$all', [], Acc) ->
+  Acc;
+all(L, F, '$all', L2, Acc) when L =/= [] orelse L2 =/= [] ->
+  all(L++L2, F, recv(), [], Acc);
+all([], F, Recv, L, Acc) ->
+  all(L, F, Recv, [], Acc);
+all([H|T], F, Recv, Tried, Acc) ->
   try
-    F(H, Recv),
-    all(T, F)
+    Ret = F(H, Recv),
+    all(T ++ Tried, F, '$all', [], [Ret|Acc])
   catch
     error:{badmatch,Recv} ->
-      all(T, F, Recv, [H|Acc])
+      all(T, F, Recv, [H|Tried], Acc)
   end.
 
 -define(assertSeq(Seq),  ?assertEto(#eto_payload{seq=Seq})).
@@ -100,8 +115,8 @@ all([H|T], F, Recv, Acc) ->
       }
     })).
 
--define(assertOrderAccepted(Seq, Order, ResponseSeq),
-  ?assertRecv(#seto_payload{
+-define(orderAccepted(Seq, Order, ResponseSeq),
+    #seto_payload{
       type=order_accepted,
       order_accepted=#seto_order_accepted{
         order=Order,
@@ -110,7 +125,25 @@ all([H|T], F, Recv, Acc) ->
       eto_payload=#eto_payload{
         seq=Seq
       }
-    })).
+    }).
+
+-define(orderInvalid(Seq, ResponseSeq, Reasons),
+    #seto_payload{
+      type=order_invalid,
+      order_invalid=#seto_order_invalid{
+        seq=ResponseSeq,
+        reasons=Reasons
+      },
+      eto_payload=#eto_payload{
+        seq=Seq
+      }
+    }).
+
+-define(assertOrderInvalid(Seq, ResponseSeq, Reasons),
+  ?assertRecv(?orderInvalid(Seq, ResponseSeq, Reasons))).
+
+-define(assertOrderAccepted(Seq, Order, ResponseSeq),
+  ?assertRecv(?orderAccepted(Seq, Order, ResponseSeq))).
 
 -define(assertOrderRejected(Seq, Reason, ResponseSeq),
   ?assertRecv(#seto_payload{

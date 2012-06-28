@@ -4,14 +4,15 @@
 -include("smk_tests.hrl").
 
 -define(setup(F), {setup, fun setup/0, F}).
--define(MARKET_ID, #seto_uuid_128{low=122001}).
--define(CONTRACT_ID, #seto_uuid_128{low=175001}).
+-define(MARKET_ID, #seto_uuid_128{low=126002}).
+-define(CONTRACT_ID, #seto_uuid_128{low=180001}).
 
 setup() ->
   application:load(smk),
   %application:set_env(smk, host, "api-dev.corp.smarkets.com"),
   %application:set_env(smk, port, 3701),
-  application:set_env(smk, host, "localhost"),
+  application:set_env(smk, host, "vagrant-dev.corp.smarkets.com"),
+  %application:set_env(smk, host, "localhost"),
   application:set_env(smk, port, 3700),
   application:set_env(smk, ssl, false),
   application:start(crypto),
@@ -35,7 +36,7 @@ account_state_exposure_test() ->
 
   {ok, 2} = smk_client:account_state(C),
   ?assertAccountState(2, #seto_account_state{
-      exposure = #seto_decimal{value=0, exponent=2}
+      exposure = #seto_decimal{value=Exp, exponent=2}
     }),
 
   Qty = 100000,
@@ -44,17 +45,25 @@ account_state_exposure_test() ->
   {ok, 3} = smk_client:order(C, Qty, Px, Side, ?MARKET_ID, ?CONTRACT_ID),
   ?assertOrderAccepted(3, Order, 3),
 
+  timer:sleep(1000),
+
   {ok, 4} = smk_client:account_state(C),
+  NextExp = Exp - 250,
   ?assertAccountState(4, #seto_account_state{
-      exposure = #seto_decimal{value=-250, exponent=2}
+      exposure = #seto_decimal{value=NextExp, exponent=2}
     }),
 
   {ok, 5} = smk_client:order_cancel(C, Order),
   ?assertOrderCancelled(5, Order, member_requested),
 
+  % the account state update may not have occured yet.
+  % a separate push message or it being included in the order state changes
+  % should occur instead of this ugly exposure check
+  timer:sleep(1000),
+
   {ok, 6} = smk_client:account_state(C),
   ?assertAccountState(6, #seto_account_state{
-      exposure = #seto_decimal{value=0, exponent=2}
+      exposure = #seto_decimal{value=Exp, exponent=2}
     }),
 
   {ok, 7} = smk_client:logout(C),
@@ -124,6 +133,7 @@ ping_resume_replay_test_() ->
         ?assertLoginResponse(1, Session),
         smk_client:drop_in(Name),
         {ok, 2} = smk_client:ping(Name),
+        timer:sleep(500),
         exit(whereis(Name), kill),
         ?assertLoginResponse(3, Session),
         ?assertPongReplay(2),
@@ -131,6 +141,23 @@ ping_resume_replay_test_() ->
         % outgoing 4 is a replay
         {ok, 5} = smk_client:logout(Name),
         ?assertLogoutConfirmation(4)
+    end}.
+
+order_invalid_test_() ->
+  {timeout, 15, fun() ->
+        {ok, C} = login(),
+        ?assertLoginResponse(1),
+        InvalidQty = 2147483648,
+        InvalidPx = 10000,
+        Side = buy,
+        {ok, 2} = smk_client:order(C, InvalidQty, 2000, Side, ?MARKET_ID, ?CONTRACT_ID),
+        ?assertOrderInvalid(2, 2, [invalid_quantity]),
+        {ok, 3} = smk_client:order(C, 100000, InvalidPx, Side, ?MARKET_ID, ?CONTRACT_ID),
+        ?assertOrderInvalid(3, 3, [invalid_price]),
+        {ok, 4} = smk_client:order(C, InvalidQty, InvalidPx, Side, ?MARKET_ID, ?CONTRACT_ID),
+        ?assertOrderInvalid(4, 4, [invalid_quantity, invalid_price]),
+        {ok, 5} = smk_client:logout(C),
+        ?assertLogoutConfirmation(5)
     end}.
 
 order_create_test_() ->
@@ -172,43 +199,44 @@ order_rejected_contract_not_found_test() ->
   {ok, 3} = smk_client:logout(C),
   ?assertLogoutConfirmation(3).
 
+many_order_create_test_() ->
+  {timeout, 20, fun() ->
+        {ok, C} = login(),
+        ?assertLoginResponse(1),
+        Qty = 100000,
+        Px = 3000,
+        Side = buy,
+        All = lists:seq(1,10),
+        lists:foreach(
+          fun(I) ->
+              I1 = I + 1,
+              {ok, I1} = smk_client:order(C, Qty, Px+(I*100), Side, ?MARKET_ID, ?CONTRACT_ID)
+          end,
+          All
+        ),
+        Orders =
+          lists:map(
+            fun(I) ->
+                I1 = I + 1,
+                ?assertOrderAccepted(I1, Order, I1),
+                Order
+            end,
+            lists:seq(1, 10)
+          ),
+        lists:foreach(
+          fun(Order) ->
+              {ok, _} = smk_client:order_cancel(C, Order)
+          end, Orders
+        ),
 
-
-many_order_create_test() ->
-  {ok, C} = login(),
-  ?assertLoginResponse(1),
-  Qty = 100000,
-  Px = 3000,
-  Side = buy,
-  lists:foreach(
-    fun(I) ->
-      I1 = I + 1,
-      {ok, I1} = smk_client:order(C, Qty, Px+(I*100), Side, ?MARKET_ID, ?CONTRACT_ID)
-    end,
-    lists:seq(1, 10)
-  ),
-  Orders =
-    lists:map(
-      fun(I) ->
-        I1 = I + 1,
-        ?assertOrderAccepted(I1, Order, I1),
-        Order
-      end,
-      lists:seq(1, 10)
-    ),
-  lists:foreach(
-    fun(Order) ->
-      {ok, _} = smk_client:order_cancel(C, Order)
-    end, Orders
-  ),
-
-  all(Orders,
-    fun(Order, Recv) ->
-      ?orderCancelled(_, Order, member_requested) = Recv
-    end
-  ),
-  {ok, 22} = smk_client:logout(C),
-  ?assertLogoutConfirmation(22).
+        all(Orders,
+          fun(Order, Recv) ->
+              ?orderCancelled(_, Order, member_requested) = Recv
+          end
+        ),
+        {ok, 22} = smk_client:logout(C),
+        ?assertLogoutConfirmation(22)
+    end}.
 
 market_subscription_test_() ->
   {timeout, 20, fun() ->
